@@ -19,6 +19,8 @@
 
 # RStudio files
 .Rproj.user/
+.DS_Store
+
 
 # produced vignettes
 vignettes/*.html
@@ -37,3 +39,16 @@ vignettes/*.pdf
 
 # R Environment Variables
 .Renviron
+
+# Exclude data and output files
+*.xlsx
+*.xls
+*.csv
+*.png
+*.pptx
+
+*Data
+*Dataout
+*Images
+*Graphics
+*GIS
