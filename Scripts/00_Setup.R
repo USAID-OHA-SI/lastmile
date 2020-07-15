@@ -17,11 +17,9 @@ library(here)
     dir_dataout <- "./Dataout"
 
     dir_geo <- "../../GEODATA"
+    dir_terr <- "../../GEODATA/RASTER"
     dir_mer <- "../../MERDATA"
     dir_datim <- "../../HFR-Data/Datim"
-
-    file_ovc <- "OVC DREAMS YCM Districts_Sites for COP20.xlsx"
-    file_psnu_ims <- "MER_Structured_Datasets_PSNU_IM_FY18-20_20200605_v1_1.rds"
 
 
 ## IMAGES / OUTPUTs ------------------
