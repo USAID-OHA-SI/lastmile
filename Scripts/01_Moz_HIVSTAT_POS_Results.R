@@ -49,7 +49,7 @@ file_districts <- "Mozambique_PROD_5_District_DistrictLsib_2020_Feb.shp"
     #'
     #' @param country Operating Unit name
     #' @param fy Fiscal Year (4 digit)
-    #' @export df_psnu PSNU by IM Dataset (data frame)
+    #' @param df_psnu PSNU by IM Dataset (data frame)
     #' @param geo_psnu PSNU Geodata (sf data frame)
     #' @param terr_path Path to terrain raster file
     #' @export
