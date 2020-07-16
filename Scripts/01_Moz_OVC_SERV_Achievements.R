@@ -289,7 +289,7 @@ source("./Scripts/00_Setup.R")
         filter(!is.na(target21)) %>% #View()
         mutate(label = paste0(psnu, " [", round(target21 / 1000, 1), "K]"))
 
-    moz_trg21 <-  moz_cop20 %>%
+    moz_trg21 <- moz_cop20 %>%
         ggplot(aes(reorder(label, target21), target21, fill = target21)) +
         geom_col(show.legend = F) +
         geom_hline(yintercept = 10000, lwd = .2, color = grey10k) +
