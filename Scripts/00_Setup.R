@@ -18,8 +18,8 @@ library(here)
 
     dir_geo <- "../../GEODATA"
     dir_terr <- "../../GEODATA/RASTER"
-    dir_mer <- "../../MERDATA"
-    dir_datim <- "../../HFR-Data/Datim"
+    dir_merdata <- "../../MERDATA"
+
 
 
 ## IMAGES / OUTPUTs ------------------
