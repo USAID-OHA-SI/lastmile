@@ -8,16 +8,12 @@
 
 library(tidyverse)
 library(readxl)
-library(tidytext)
+library(vroom)
 library(sf)
 library(gisr)
 library(glitr)
 library(glamr)
-library(vroom)
 library(janitor)
-library(scales)
-library(patchwork)
-library(ggrepel)
 
 # REQUIRED
 
@@ -29,10 +25,6 @@ country = "Mozambique"
 
 # files
 file_ovc <- "OVC DREAMS YCM Districts_Sites for COP20.xlsx"
-
-file_psnu_im1 <- "MER_Structured_Datasets_PSNU_IM_FY18-20_20200605_v1_1.rds"
-file_psnu_im2 <- "PSNU_IM_FY18-21_20200605_v1_1.rds"
-file_psnu_im3 <- "PSNU_IM_FY18-20_Global_20200626_v1_1.rds"
 
 file_psnu_txt <- "MER_Structured_Datasets_PSNU_IM_FY18-20_20200626_v2_1_Mozambique"
 
@@ -107,6 +99,13 @@ echo_provinces<- geo_psnu_echo %>%
     pull()
 
 ## MOZ OVC
+shts <- excel_sheets(path = here(dir_data, file_ovc))
+shts
+
+dfs <- shts[-1] %>%
+    set_names(str_replace_all(., " ", "_")) %>%
+    map(read_excel, path = here(dir_data, file_ovc))
+
 df_ovc <- dfs$OVC_Districts_COP20 %>%
     select(1:4) %>%
     filter(row_number() > 1)
@@ -124,7 +123,7 @@ df_ovc %>%
     distinct(implementing_partner) %>%
     pull()
 
-df_ovc %>% View()
+df_ovc %>% glimpse()
 
 df_ovc_districts <- df_ovc %>%
     rename(province = row_labels) %>%
@@ -138,10 +137,6 @@ df_ovc_districts <- df_ovc_districts %>%
 df_ovc_districts <- df_ovc_districts %>%
     st_as_sf()
 
-adm1 %>%
-    st_set_geometry(NULL) %>%
-    select(province) %>% pull()
-
 geo_ocho_prov <- adm1 %>%
     select(province) %>%
     dplyr::filter(province %in% echo_provinces)
@@ -149,8 +144,8 @@ geo_ocho_prov <- adm1 %>%
 ## VIZ -----------------------------------------------------------------
 
     terrain_map(countries = country, terr_path = dir_terr, mask = TRUE) +
-        geom_sf(data = geo_ocho_prov, size = .3, fill = USAID_dkred, color = grey10k, alpha= .5) +
-        geom_sf(data = df_ovc_districts, size = .2, fill = USAID_ltblue, color = grey10k, alpha= .6) +
+        geom_sf(data = geo_ocho_prov, size = .3, fill = USAID_red, color = grey10k, alpha= .6) +
+        geom_sf(data = df_ovc_districts, size = .1, fill = USAID_medblue, color = grey10k, alpha= .6) +
         geom_sf(data = adm1, fill = NA, size = .3, linetype = "dotted") +
         geom_sf_text(data = adm1, aes(label = province), size = 4, color = grey90k) +
         labs(
