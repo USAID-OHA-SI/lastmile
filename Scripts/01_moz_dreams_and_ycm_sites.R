@@ -1,23 +1,22 @@
 ## PROJECT:  PEPFAR Geospatial Analytics
 ## AUTHOR:   B.Kagniniwa, G.Sarfaty | USAID
 ## LICENSE:  MIT
-## PURPOSE:  MOZ - OVC_SERV FY20 Achievements
-## Date:     2020-07-13
+## PURPOSE:  MOZ - DREAMS Districts & YCM Sites
+## Date:     2020-07-27
 
 # LIBRARIES
 
 library(tidyverse)
-library(ggplot2)
 library(readxl)
-library(tidytext)
+library(vroom)
+library(foreign)
 library(sf)
 library(gisr)
 library(glitr)
 library(glamr)
 library(janitor)
 library(scales)
-library(patchwork)
-library(ggrepel)
+library(RColorBrewer)
 
 # REQUIRED
 
@@ -25,19 +24,15 @@ source("./Scripts/00_Setup.R")
 
 # GLOBALS -----------------------
 
+user <- ""
+key <- ""
+
 country = "Mozambique"
 
 # files
 file_ovc <- "OVC DREAMS YCM Districts_Sites for COP20.xlsx"
-file_psnu_im1 <- "MER_Structured_Datasets_PSNU_IM_FY18-20_20200605_v1_1.rds"
-file_psnu_im2 <- "PSNU_IM_FY18-21_20200605_v1_1.rds"
 
-file_psnu_im3 <- "PSNU_IM_FY18-20_Global_20200626_v1_1.rds"
-
-file_psnu_txt3 <- "Genie_PSNU_IM_Global_Frozen_8cdac4af-9175-4859-bf88-a35e76be063c.txt"
-
-# read_tsv(here(dir_mer, file_psnu_txt3))%>%
-#     write_rds(path = here(dir_mer, file_psnu_im3), compress = "gz")
+file_psnu_txt3 <- "MER_Structured_Datasets_PSNU_IM_FY18-20_20200626_v2_1_Mozambique"
 
 file_districts <- "Mozambique_PROD_5_District_DistrictLsib_2020_Feb.shp"
 
@@ -56,37 +51,37 @@ moz2 <- get_adm_boundaries("MOZ", adm_level = 2, geo_path = dir_geo) %>%
     select(country = name_0, province = name_1, district = name_2)
 
 
-moz_districts <- (list.files(path = here(dir_geo, "PEPFAR"),
-                             pattern = file_districts,
-                             recursive = TRUE,
-                             full.names = TRUE) %>%
-                      map(read_sf))[[1]]
+geo_psnu <- list.files(
+        path = here(dir_geo, "PEPFAR"),
+        pattern = file_districts,
+        recursive = TRUE,
+        full.names = TRUE
+    ) %>%
+    read_sf()
 
-moz_districts <- moz_districts %>%
+
+geo_psnu <- geo_psnu %>%
     select(uid, country = level3name, province = level4name, district = level5name) %>%
     mutate(
         district = case_when(
             district == "Chonguene" ~ "Chongoene",
             district == "Cidade De Xai-Xai" ~ "Xai-Xai",
-            district == "Cidade De Chimoio" ~ "Chimoio",
+            district == "Chimoio" ~ "Cidade De Chimoio",
             district == "ManhiÒ«a" ~ "Manhica",
             district == "Cidade Da Matola" ~ "Matola",
             district == "Cidade Da Beira" ~ "Beira",
             district == "Maganja Da Costa" ~ "Maganja da Costa",
+            district == "Cidade De Tete" ~ "Tete",
+            district == "Chókwe" ~ "Chokwe",
             district == "Cidade De Quelimane" ~ "Quelimane",
+            district == "Cidade De Chimoio" ~ "Chimoio",
             TRUE ~ district
         )
     )
 
-moz_districts %>%
-    st_as_sf() %>%
-    st_set_geometry(NULL) %>%
-    arrange(province, district) %>% glimpse()
-
-## MOZ OVC & YCM Sites
+## MOZ DREAMS & YCM Sites
 
 shts <- excel_sheets(path = here(dir_data, file_ovc))
-shts
 
 dfs <- shts[-1] %>%
     set_names(str_replace_all(., " ", "_")) %>%
@@ -103,40 +98,82 @@ df_dreams <- dfs$`DREAMS_COP20_new_+_old_district` %>%
     relocate(new_cop_20, .after = last_col()) %>%
     arrange(province, district)
 
-df_dreams %>% head()
+df_dreams_districts <- df_dreams %>%
+    left_join(geo_psnu, by = "district") %>%
+    dplyr::rename(province = province.x) %>%
+    dplyr::select(-province.y) %>%
+    st_as_sf()
 
-df_dreams <- moz_districts %>%
-    left_join(df_dreams, by="district") %>%
-    select(-province.y) %>%
-    rename(province = province.x) %>%
-    filter(!is.na(new_cop_20))
-
-df_dreams %>%
-    st_set_geometry(NULL) %>%
-    prinf()
-
-df_dreams %>%
+df_dreams_districts %>%
     ggplot() +
     geom_sf(aes(fill=new_cop_20), lwd = .5, color = grey20k) +
     si_style_map()
 
-## MOZ OVC
 
-df_ovc <- dfs$OVC_Districts_COP20 %>%
-    select(1:4) %>%
-    filter(row_number() > 1)
+## MOZ YCM
 
-df_ovc_cols <- dfs$OVC_Districts_COP20[1,] %>%
+df_ycm <- dfs$Youth_Case_Management_Sites_COP
+
+df_ycm_cols <- dfs$Youth_Case_Management_Sites_COP[1,] %>%
     unlist() %>%
     unname()
 
-colnames(df_ovc) <- df_ovc_cols[1:4]
-
-df_ovc <- df_ovc %>%
+df_ycm <- df_ycm %>%
+    filter(row_number() > 1) %>%
+    set_names(df_ycm_cols) %>%
     clean_names()
 
-df_ovc %>%
-    distinct()
+df_ycm %>% glimpse()
+
+## MOZ Facilities Locations
+
+df_facs <- extract_locations(country = country, username = user, password = glamr::mypwd(key)) %>%
+    extract_facilities()
+
+df_ycm_sites <- df_ycm %>%
+    left_join(df_facs, by = c("facility_uid" = "id"))
 
 
-## MOZ YCM
+# VIZ -------------------------------------------------------
+
+## DREAMS
+terrain_map(countries = country, terr_path = dir_terr, mask = TRUE) +
+    geom_sf(data = df_dreams_districts, aes(fill = new_cop_20), size = .3, color = grey10k, alpha= .6, show.legend = F) +
+    geom_sf(data = adm1, fill = NA, size = .3, linetype = "dotted") +
+    geom_sf_text(data = adm1, aes(label = province), size = 4, color = grey90k) +
+    scale_fill_manual(values = c(USAID_medblue, USAID_red)) +
+    labs(
+        title = "MAZAMBIQUE - COP20 DREAMS Districts",
+        subtitle = "Districts in red are new as of COP20",
+        caption = paste0(
+            "OHA/SIEI/SI - Data from DATIM Q2 & HQ/PEDS-OVC Team, ", Sys.Date(),
+            "\nNote: names and boundaries are not necessarily authoritative."
+        )
+    ) +
+    si_style_map()
+
+ggsave(here(dir_graphs, "MOZ - DREAMS Districts for COP20.png"),
+       plot = last_plot(), scale = 1.2,
+       dpi = 310, width = 7, height = 10, units = "in")
+
+
+## DREAMS + YCM Sites
+terrain_map(countries = country, terr_path = dir_terr, mask = TRUE) +
+    geom_sf(data = df_dreams_districts, aes(fill = new_cop_20), size = .3, color = grey10k, alpha= .6, show.legend = F) +
+    geom_point(data = df_ycm_sites, aes(longitude, latitude), shape = 21, size = 3, fill = grey80k, colour = "white") +
+    geom_sf(data = adm1, fill = NA, size = .3, linetype = "dotted") +
+    geom_sf_text(data = adm1, aes(label = province), size = 4, color = grey90k) +
+    scale_fill_manual(values = c(USAID_medblue, USAID_red)) +
+    labs(
+        title = "MAZAMBIQUE - COP20 DREAMS Districts & YCM Sites",
+        subtitle = "Districts in red are new and dark dots are YCM Sites",
+        caption = paste0(
+            "OHA/SIEI/SI - Data from DATIM Q2 & HQ/PEDS-OVC Team, ", Sys.Date(),
+            "\nNote: names and boundaries are not necessarily authoritative."
+        )
+    ) +
+    si_style_map()
+
+ggsave(here(dir_graphs, "MOZ - DREAMS Districts and YCM Sites for COP20.png"),
+       plot = last_plot(), scale = 1.2,
+       dpi = 310, width = 7, height = 10, units = "in")
