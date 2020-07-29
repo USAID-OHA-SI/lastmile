@@ -83,6 +83,9 @@ df_psnu <- list.files(
     ) %>%
     vroom()
 
+df_psnu %>%
+    distinct(fiscal_year)
+
 ## MOZ OVC Districts
 
 shts <- excel_sheets(path = here(dir_data, file_ovc))
