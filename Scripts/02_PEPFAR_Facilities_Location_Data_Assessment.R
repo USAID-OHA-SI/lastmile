@@ -3,6 +3,7 @@
 ## LICENSE:  MIT
 ## PURPOSE:  Facilities Location data assessment
 ## Date:     2020-07-21
+## Updated:  2020-08-05
 
 # LIBRARIES
 
@@ -24,8 +25,10 @@ library(glamr)
     user <- ""
     key <- ""
 
-    # Data & Outpu folders
+    # Data & Output folders
     dir_terr <- "../../GEODATA/RASTER"
+    dir_sites <- "../../GEODATA/PEPFAR/OU-Sites"
+
     dir_graphs <- "./Graphics"
 
     ## MER Sites by IM data: this folder contains all the zip files
@@ -37,7 +40,7 @@ library(glamr)
 
     files_mer_sites %>% length()
 
-    files_mer_sites %>%
+    files_mer_ous <- files_mer_sites %>%
         map(function(x){
             str_split(x, ".zip") %>%
                 unlist() %>%
@@ -48,11 +51,13 @@ library(glamr)
         }) %>%
         unlist()
 
+    files_mer_ous
+
 
 # FUNCTIONS ------------------------------------------------------------------------------
 
     ## Read country specific MER Sites by IM Data
-    get_mer_sites <- function(mer_folder, country) {
+    get_mersites <- function(mer_folder, country) {
 
         list.files(path = {{mer_folder}},
                    pattern = paste0("^MER_.*_Site_IM_FY\\d{2}-\\d{2}_\\d{8}_.*_", {{country}}, ".zip$"),
@@ -60,6 +65,19 @@ library(glamr)
             map_dfr(.x, .f=~vroom(.x, col_select = c("orgunituid", "sitename", "cumulative"))) %>%
             filter(!is.na(cumulative)) %>%
             distinct(orgunituid, sitename)
+    }
+
+    ## Export facilities location data
+    export_facilities <- function(cntry, user, pass, dir_mersites, out_folder = "./Dataout") {
+        sites <- extract_locations(country = {{cntry}},
+                          username = {{user}},
+                          password = {{pass}}) %>%
+            extract_facilities(mer_sites = get_mersites({{dir_mersites}}, {{cntry}})) %>%
+            select(operatingunit:id, longitude:latitude)
+
+        sites %>% glimpse()
+
+        readr::write_csv(sites, path = paste0({{out_folder}}, "/", {{cntry}}, " - Facilities_locations_", Sys.Date(), ".csv"), na = "")
     }
 
 # DATA --------------------------------------------------------------------------
@@ -76,7 +94,7 @@ library(glamr)
     ## Combine map + assessment graph
     countries[1:18, 20:25] %>%
         map(.x, .f = ~generate_facilities_report(cntry = .x,
-                                                 mer_sites = get_mer_sites(dir_merdata, .x),
+                                                 mer_sites = get_mersites(dir_merdata, .x),
                                                  user = user,
                                                  pass = glamr::mypwd(key),
                                                  terr_path = dir_terr,
@@ -84,9 +102,15 @@ library(glamr)
     ## SS has mis-matching scales
     countries[19] %>%
         map(.x, .f = ~generate_facilities_report(cntry = .x,
-                                             mer_sites = get_mer_sites(dir_merdata, .x),
+                                             mer_sites = get_mersites(dir_merdata, .x),
                                              user = user,
                                              pass = glamr::mypwd(key)
                                              output_folder = dir_graphs))
+
+    ## Export Facilities location data by OU
+    countries %>%
+        map(export_facilities, user, glamr::mypwd(key), dir_merdata, dir_sites)
+
+
 
 
