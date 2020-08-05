@@ -80,6 +80,38 @@ library(glamr)
         readr::write_csv(sites, path = paste0({{out_folder}}, "/", {{cntry}}, " - Facilities_locations_", Sys.Date(), ".csv"), na = "")
     }
 
+    ## generate facilities report 2
+    generate_facilities_report2 <- function(df_sites, cntry, terr_path = NULL, output_folder = NULL) {
+
+        # Map sites locations
+        viz_map <- df_sites %>%
+            explore_facilities(cntry = {{cntry}}, terr_path = {{terr_path}})
+
+        # Plot completeness
+        viz_bar <- df_sites %>%
+            assess_facilities()
+
+        # Combine plots
+        viz <- patchwork::wrap_plots(viz_map, viz_bar, nrow = 1, widths = c(2,1)) +
+            patchwork::plot_annotation(
+                title = toupper({{cntry}}),
+                subtitle = "Facilities location data availability",
+                theme = ggplot2::theme(
+                    plot.title = element_text(hjust = .5),
+                    plot.subtitle = element_text(hjust = .5)
+                )
+            )
+
+        # Export viz as png file
+        if ( !is.null({{output_folder}}) ) {
+            ggplot2::ggsave(
+                filename = paste0({{output_folder}}, "/", {{cntry}}, " - Sites location data availability.png"),
+                plot = last_plot(), scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
+        }
+
+        return(viz)
+    }
+
 # DATA --------------------------------------------------------------------------
 
     ## Get list of PEPFAR OUs
@@ -112,5 +144,13 @@ library(glamr)
         map(export_facilities, user, glamr::mypwd(key), dir_merdata, dir_sites)
 
 
-
+    ## Batch generate Maps
+    list.files(
+        path = dir_sites,
+        pattern = ".csv$",
+        full.names = TRUE
+    ) %>%
+        first() %>%
+        vroom() %>%
+        generate_facilities_report2(cntry = "Angola")
 
