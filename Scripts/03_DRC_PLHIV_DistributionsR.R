@@ -21,14 +21,12 @@ library(ggrepel)
 
     source("./Scripts/00_Setup.R")
 
+    source("./_secrets/credentials.R")
+
 # GLOBALS --------------------------------------------------------------------------------
 
     ## Country
     country <- "Democratic Republic of the Congo"
-
-    ## Datim Account details
-    user <- "bkagniniwa"
-    key <- "datim_myuser"
 
     ## Country COP20 Data
     dir_drc <- "../../PEPFAR/COUNTRIES/DRC"
@@ -38,8 +36,8 @@ library(ggrepel)
     file_zmb_cop20 <- "Zambia_COP20_Datapack_Final.xlsx"
 
     ## MER NAT SubNat
-    file_subnat <- "MER_Structured_Datasets_NAT_SUBNAT_FY15-20_20200605_v1_1"
-    #file_subnat <- "MER_Structured_Datasets_NAT_SUBNAT_FY15-20_20200626_v2_1"
+    #file_subnat <- "MER_Structured_Datasets_NAT_SUBNAT_FY15-20_20200605_v1_1"
+    file_subnat <- "MER_Structured_Datasets_NAT_SUBNAT_FY15-20_20200626_v2_1"
 
 # DATA ------------------------------------------------------------------------------------
 

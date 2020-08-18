@@ -47,6 +47,7 @@ vignettes/*.pdf
 *.png
 *.pptx
 
+*_secrets
 *Data
 *Dataout
 *Images
