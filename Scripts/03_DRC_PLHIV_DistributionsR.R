@@ -29,15 +29,15 @@ library(ggrepel)
     country <- "Democratic Republic of the Congo"
 
     ## Country COP20 Data
-    dir_drc <- "../../PEPFAR/COUNTRIES/DRC"
-    dir_zmb <- "../../PEPFAR/COUNTRIES/Zambia"
+    dir_cntry <- "../../PEPFAR/COUNTRIES/DRC"
+    #dir_cntry <- "../../PEPFAR/COUNTRIES/Zambia"
 
-    file_drc_cop20 <- "COP 2020 DRC FAST_FINAL_5.11.2020.xlsx"
-    file_zmb_cop20 <- "Zambia_COP20_Datapack_Final.xlsx"
+    file_cntry_cop20 <- "COP 2020 DRC FAST_FINAL_5.11.2020.xlsx"
+    #file_cntry_cop20 <- "Zambia_COP20_Datapack_Final.xlsx"
 
     ## MER NAT SubNat
-    #file_subnat <- "MER_Structured_Datasets_NAT_SUBNAT_FY15-20_20200605_v1_1"
-    file_subnat <- "MER_Structured_Datasets_NAT_SUBNAT_FY15-20_20200626_v2_1"
+    #file_mer_subnat <- "MER_Structured_Datasets_NAT_SUBNAT_FY15-20_20200605_v1_1"
+    file_mer_subnat <- "MER_Structured_Datasets_NAT_SUBNAT_FY15-20_20200626_v2_1"
 
 # DATA ------------------------------------------------------------------------------------
 
@@ -71,16 +71,20 @@ library(ggrepel)
     df_psnu_results %>% glimpse()
 
 
-    ## DRC Datapack / FAST
-    file_drc <- list.files(path = paste0(dir_drc, "/Data"),
-                           pattern = file_drc_cop20,
-                           full.names = TRUE)
+    ## Datapack / FAST
+    file_dpack_path <- list.files(
+        path = here(dir_cntry, "Data"),
+        pattern = file_cntry_cop20,
+        full.names = TRUE
+    )
 
-    file_shts <- file_drc %>% excel_sheets()
+    file_dpack_shts <- file_dpack_path %>%
+        excel_sheets()
 
-    file_shts
+    file_dpack_shts
 
-    file_drc %>%
+    ## Read all mechs from data pack
+    file_dpack_path %>%
         read_excel(., sheet = "Mechs List-R") %>%
         janitor::clean_names() %>%
         filter(funding_agency == "USAID") %>%
@@ -90,7 +94,7 @@ library(ggrepel)
     ## MER Nat & SubNat Estimates - FY15-20 v2.1
     df_subnat <- list.files(
             path = dir_merdata,
-            pattern = file_subnat,
+            pattern = file_mer_subnat,
             full.names = TRUE
         ) %>%
         vroom()
@@ -108,13 +112,14 @@ library(ggrepel)
         arrange(indicatortype, indicator) %>%
         prinf()
 
+    ## Get a subset of indicators: POP, PLHIV, TX_CURR
     df_subnat <- df_subnat %>%
         filter(indicator %in% c("POP_EST", "PLHIV", "TX_CURR_SUBNAT")) %>%
         filter(standardizeddisaggregate == "Age/Sex") %>%
         filter(!str_detect(operatingunit, "Region$")) %>%
         select(operatingunit, countryname:psnuuid, indicator, ageasentered:sex, fiscal_year, targets) #%>% View()
 
-    #df_subnat %>% View(title = "SUBNAT")
+    df_subnat %>% View(title = "SUBNAT")
 
     df_subnat %>%
         filter(operatingunit == country) %>%
@@ -123,8 +128,7 @@ library(ggrepel)
         distinct(operatingunit, indicator, fiscal_year) %>%
         prinf()
 
-    # Only 2018 POP_EST is available for DRC
-    # Keep the latest year
+    ## Only 2018 POP_EST is available for DRC - Keep the latest year
     df_pop_est <- df_subnat %>%
         filter(operatingunit == country, indicator == "POP_EST") %>%
         group_by_at(vars(-c(ageasentered, targets))) %>%
@@ -151,7 +155,7 @@ library(ggrepel)
             adult_female_n = sum(targets[trendscoarse == '15+' & sex == 'Female'], na.rm = TRUE),
             adult_female_p = round(adult_female_n / total_all_n * 100)
         ) %>%
-        ungroup() %>%
+        ungroup() %>% View()
         gather(key = "age_sex_group", value = "targets", total_all_n:adult_female_p) %>% #view()
         separate(age_sex_group, into = c("age", "sex", "numprop")) %>%
         spread(key = indicator, value = targets) %>%
@@ -162,32 +166,34 @@ library(ggrepel)
         gather(key = "indicator", value = "targets", PLHIV:TX_CURR_SUBNAT) %>%
         relocate(unmet_n:unmet_p, .after=last_col())
 
+    df_hiv %>% View(title = "HIV")
 
+    ## Zambia's Datapack
 
-    ## Zambia Datapack
-    paste0(dir_zmb, "/", file_zmb_cop20) %>%
-        excel_sheets(path = .)
-
-    df_epi <- paste0(dir_zmb, "/", file_zmb_cop20) %>%
-        read_xlsx(., sheet="Epi Cascade I",
-                  skip=13,
-                  col_names=TRUE)
-
-    df_epi %>% glimpse()
-    df_epi %>% View()
-
-    df_epi <- df_epi %>%
-        separate(PSNU, c("psnu","snutype","psnuuid"), sep = "\\[") %>%
-        mutate(psnuuid = str_remove(psnuuid, "\\]")) %>%
-        select(psnu, psnuuid, Age, Sex,
-               `PLHIV.NA.Age/Sex/HIVStatus.T`,
-               `PLHIV.districtUncertainty`) %>%
-        rename(plhiv=`PLHIV.NA.Age/Sex/HIVStatus.T`)%>%
-        group_by(psnu, psnuuid, Age, Sex) %>%
-        summarise_at(vars(plhiv), sum, na.rm=TRUE)
-
-    df_epi %>% glimpse()
-    df_epi %>% View()
+    # dir_cntry <- "../../PEPFAR/COUNTRIES/Zambia"
+    # file_cntry_cop20 <- "Zambia_COP20_Datapack_Final.xlsx"
+    #
+    # paste0(dir_cntry, "/Data/", file_cntry_cop20) %>%
+    #     excel_sheets(path = .)
+    #
+    # df_epi <- paste0(dir_cntry, "/Data/", file_cntry_cop20) %>%
+    #     read_xlsx(., sheet="Epi Cascade I",
+    #               skip=13,
+    #               col_names=TRUE)
+    #
+    # df_epi <- df_epi %>%
+    #     separate(PSNU, c("psnu","snutype","psnuuid"), sep = "\\[") %>%
+    #     mutate(psnuuid = str_remove(psnuuid, "\\]")) %>%
+    #     select(psnu, psnuuid, Age, Sex,
+    #            `PLHIV.NA.Age/Sex/HIVStatus.T`,
+    #            `PLHIV.districtUncertainty`) %>%
+    #     rename(plhiv=`PLHIV.NA.Age/Sex/HIVStatus.T`)%>%
+    #     group_by(psnu, psnuuid, Age, Sex) %>%
+    #     summarise_at(vars(plhiv), sum, na.rm=TRUE) %>%
+    #     ungroup()
+    #
+    # df_epi %>% glimpse()
+    # df_epi %>% View()
 
 # VIZ ----------------------------------------------------------
 
