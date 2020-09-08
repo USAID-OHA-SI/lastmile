@@ -6,7 +6,6 @@
 
 # Libraries
 library(tidyverse)
-library(ggplot2)
 library(readxl)
 library(vroom)
 library(sf)
@@ -45,6 +44,21 @@ library(extrafont)
 
     psnu_im <- "^MER_.*_PSNU_IM_.*_20200814_.*.zip$"
 
+    ## Reporting Filters
+
+    rep_agency = "USAID"
+
+    rep_fy = 2020
+    rep_qtr = 3
+
+    rep_pd = fy %>%
+        as.character() %>%
+        str_sub(3,4) %>%
+        paste0("FY", ., "Q", qtr)
+
+
+
+
 
 # DATA --------------------------------------------------------------
 
@@ -63,23 +77,18 @@ library(extrafont)
 
     df_psnu %>% glimpse()
 
+
     df_psnu %>%
         distinct(operatingunit) %>%
         arrange(operatingunit) %>%
         prinf()
 
-    df_psnu %>%
-        filter(str_detect(operatingunit, " Region")) %>%
-        select(operatingunit, snu1, snu1uid, psnu, psnuuid) %>%
-        distinct(operatingunit, snu1, snu1uid, psnu, psnuuid) %>%
-        arrange(snu1) %>%
-        prinf()
+    df_ous <- df_psnu %>%
+        distinct(operatingunit, operatingunituid) %>%
+        arrange(operatingunit)
 
-    df_psnu %>%
-        filter(!str_detect(operatingunit, " Region")) %>%
-        distinct(operatingunit, psnuuid) %>%
-        arrange(operatingunit) %>%
-        prinf()
+    df_ous %>% prinf()
+
 
     df_cntries <- df_psnu %>%
         distinct(operatingunit, countryname) %>%
@@ -87,21 +96,43 @@ library(extrafont)
 
     df_cntries %>% prinf()
 
-    lst_psnu <- df_psnu %>%
+
+    df_psnus <- df_psnu %>%
+        filter(str_detect(operatingunit, " Region")) %>%
+        select(operatingunit, countryname, snu1, snu1uid, psnu, psnuuid) %>%
+        distinct(operatingunit, countryname, snu1, snu1uid, psnu, psnuuid) %>%
+        arrange(operatingunit, countryname, snu1)
+
+    df_psnus %>% head()
+
+
+    ## List of Orgs
+
+    lst_psnu <- df_psnus %>%
         filter(!is.na(psnuuid), psnuuid != "?") %>%
         distinct(psnuuid) %>%
         pull()
 
+    lst_snu1 <- df_psnus %>%
+        filter(!is.na(snu1uid), psnuuid != "?") %>%
+        distinct(snu1uid) %>%
+        pull()
 
-    # MER Data Munge
-    df_VL<-df %>%
-        filter(fiscal_year=="2020",
-               fundingagency=="USAID",
+    lst_ous <- df_ous %>%
+        filter(!str_detect(operatingunit, " Region")) %>%
+        pull(operatingunituid)
+
+
+    ## MER Data Munge
+
+    df_vl <- df_psnu %>%
+        filter(fiscal_year == rep_fy,
+               fundingagency == rep_agency,
                indicator %in% c("TX_PVLS","TX_CURR"),
                standardizeddisaggregate %in% c("Total Numerator","Total Denominator"),
-               operatingunit %in% c("Zimbabwe","Mozambique","Lesotho","Kenya")) %>%
+               operatingunituid %in% lst_ous) %>%
         mutate(indicator = ifelse(numeratordenom == "D", paste0(indicator, "_D"), indicator)) %>%
-        group_by(fiscal_year,operatingunit,psnuuid,psnu,indicator) %>%
+        group_by(fiscal_year, operatingunit, psnuuid, psnu, indicator) %>%
         summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
         ungroup() %>%
         reshape_msd(clean = TRUE) %>%
@@ -110,19 +141,33 @@ library(extrafont)
 
 
 
-    df_VL<-df_VL %>%
-        group_by(operatingunit,psnuuid,psnu) %>%
-        mutate(VLC = TX_PVLS_D / lag(TX_CURR, 2, order_by = period),
-               ou_lab = paste0(operatingunit, " (", lag(TX_CURR, 2, order_by = period) %>% comma(), ")")) %>%
+    df_vl <- df_vl %>%
+        group_by(operatingunit, psnuuid, psnu) %>%
+        mutate(VLC = TX_PVLS_D / lag(TX_CURR, 2, order_by = period)) %>%
         ungroup() %>%
-        mutate(VLS = (TX_PVLS/TX_PVLS_D)*VLC) %>%
-        mutate(Not_Cov=case_when(VLC >1 ~ 0,
-                                 TRUE ~ 1-VLC)) %>%
-        filter(period == "FY20Q3") %>%
-        mutate(shortname = case_when(operatingunit=="Kenya" ~ str_remove(psnu, "County"),
-                                     TRUE ~ psnu)) %>%
-        mutate(lab_psnu = case_when(Not_Cov > .2 ~ shortname))
-
+        filter(period == rep_pd) %>%
+        mutate(
+            VLS = (TX_PVLS / TX_PVLS_D) * VLC,
+            VLnC = case_when(
+                VLC > 1 ~ 0,
+                TRUE ~ 1 - VLC
+            ),
+            ou_label = paste0(
+                operatingunit,
+                " (",
+                lag(TX_CURR, 2, order_by = period) %>% comma(accuracy = 1),
+                ")"
+            ),
+            psnu_short = case_when(
+                str_detect(psnu, " County$") ~  str_remove(psnu, " County$"),
+                str_detect(psnu, " District$") ~  str_remove(psnu, " District$"),
+                TRUE ~ psnu
+            ),
+            psnu_label = case_when(
+                VLnC > .2 ~ psnu_short,
+                TRUE ~ ""
+            )
+        )
 
 
 
@@ -136,6 +181,7 @@ library(extrafont)
 
     ous %>% prinf()
 
+
     ## Geodata
     spdf_pepfar <- list.files(
             path = dir_geo,
@@ -147,26 +193,91 @@ library(extrafont)
 
     spdf_pepfar %>% plot()
 
-    # Geo OUs
+    ## Geo-units
+
+    ## OU
+    spdf_pepfar %>%
+        filter(uid == "XOivy2uDpMF") %>%
+        plot()
+
     spdf_ou <- spdf_pepfar %>%
-        filter(!uid %in% lst_psnu)
+        filter(uid %in% lst_ous)
+
+    spdf_ou
 
     spdf_ou %>% plot()
 
-    # Geo PSNUs
+
+    ## SNU1
+    spdf_snu <- spdf_pepfar %>%
+        filter(uid %in% lst_snu1, !uid %in% lst_ous)
+
+
+    spdf_snu
+
+    spdf_snu %>% plot()
+
+
     spdf_psnu <- spdf_pepfar %>%
-        filter(uid %in% lst_psnu)
+        filter(uid %in% lst_psnu, !uid %in% lst_ous, !uid %in% lst_snu1)
+
+    spdf_psnu %>% glimpse()
 
     spdf_psnu %>% plot()
 
 
+    ## MER GeoData
 
+    spdf_psnu <- spdf_psnu %>%
+        left_join(df_vl, by = c("uid" = "psnuuid")) %>%
+        filter(!is.na(period) | operatingunit != "South Africa")
 
+    spdf_psnu %>% glimpse()
 
+    spdf_psnu %>%
+        st_set_geometry(NULL) %>%
+        distinct(operatingunit) %>%
+        pull() %>%
+        setdiff(df_ous$operatingunit)
 
 # VIZ --------------------------------------
 
-moz_map<- terrain_map(countries = "Mozambique", terr_path = dir_terr, mask = TRUE) +
+
+    #' Viz VLC
+    #'
+    vlc_map <- function(df, country) {
+
+        df_geo <- df %>% filter(operatingunit == {{country}})
+
+        base_map <- terrain_map(countries = {{country}}, terr_path = dir_terr, mask = TRUE)
+
+        print(base_map)
+
+        theme_map <- base_map +
+            geom_sf(data = df_geo %>% filter(!is.na(VLnC)), aes(fill = VLnC), lwd = .2, color = grey10k) +
+            scale_fill_gradient2(
+                low = "yellow",
+                high = "brown",
+                labels = percent
+            )+
+            si_style_map() +
+            theme(
+                legend.position =  c(.9, .2),
+                legend.direction = "vertical",
+                legend.key.width = ggplot2::unit(.5, "cm"),
+                legend.key.height = ggplot2::unit(1, "cm")
+            )
+
+        print(theme_map)
+
+        return(them_map)
+    }
+
+    vlc_map(spdf_psnu, "Kenya")
+
+###
+
+viz_map <- terrain_map(countries = "Mozambique", terr_path = dir_terr, mask = TRUE) +
     geom_sf(data = mozgeo %>% filter(!is.na(Not_Cov)), aes(fill = Not_Cov), lwd = .2, color = grey10k) +
     geom_sf(data = moz1, fill = NA, lwd = .2, color = grey30k) +
     scale_fill_gradient2(
