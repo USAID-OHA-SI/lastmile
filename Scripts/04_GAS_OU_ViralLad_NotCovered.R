@@ -6,7 +6,6 @@
 
 # Libraries
 library(tidyverse)
-library(readxl)
 library(vroom)
 library(sp)
 library(sf)
@@ -20,7 +19,6 @@ library(patchwork)
 library(ggrepel)
 library(here)
 library(ICPIutilities)
-library(googlesheets4)
 library(extrafont)
 
 # REQUIRED -------------------------------------------------------------------------------
@@ -58,19 +56,43 @@ library(extrafont)
         str_sub(3,4) %>%
         paste0("FY", ., "Q", rep_qtr)
 
-    # Graphic caption
-    caption <- paste0("Source: FY20Q3i MSD - USAID Only,
-            VLC = TX_PVLS / TX_CURR (2 periods prior)
-            Not Covered = 1 - VLC
-            Produced on ", format(Sys.Date(), "%Y%m%d"))
+
+# FUNCTIONS ---------------------------------------------------------
 
 
-    get_caption <- function(var) {
+    #' Graphic caption
+    #'
+    #' @param country country name
+    #' @param var df variable
+    #' @return plot caption
+    #'
+    get_caption <- function(country, var = NULL) {
 
         caption <- paste0(
-            "Source: FY20Q3i MSD - USAID Only,
-            VLC = TX_PVLS / TX_CURR (2 periods prior), Not Covered = 1 - VLC
-            Variable mapped: ", {{var}},
+            "OHA/SIEI - Data Source: FY20Q3i MSD - USAID Only,
+            VLC = TX_PVLS / TX_CURR (2 periods prior), Not Covered = 1 - VLC\n",
+            toupper({{country}})
+        )
+
+        if (is.null({{var}})) {
+
+            caption <- paste0(
+                caption,
+                " - Variable mapped: VLS, VLC, VLnC"
+            )
+        }
+        else {
+
+            caption <- paste0(
+                caption,
+                " - ",
+                "Variable mapped: ",
+                toupper({{var}})
+            )
+        }
+
+        caption <- paste0(
+            caption,
             ", Produced on ",
             format(Sys.Date(), "%Y%m%d")
         )
@@ -78,7 +100,13 @@ library(extrafont)
         return(caption)
     }
 
-    # Graphic file name
+
+    #' Graphic file name
+    #'
+    #' @param country country name
+    #' @param var df variable
+    #' @return plot file name
+    #'
     get_output_name <- function(country, var = "VLC") {
 
         name <- paste0("FY20Q3_ViralLoad_",
@@ -92,11 +120,10 @@ library(extrafont)
     }
 
 
-
-# FUNCTIONS ---------------------------------------------------------
-
-    #' Terrain data
+    #' Terrain Raster data
     #'
+    #' @param terr_path path to terrain raster file
+    #' @return RasterLayer
     #'
     get_raster <- function(terr_path = NULL) {
 
@@ -107,7 +134,6 @@ library(extrafont)
 
         if (!dir.exists(dir_terr))
             stop(paste0("Invalid terrain path: ", dir_terr))
-
 
         terr_file <- list.files(
             path = dir_terr,
@@ -122,8 +148,12 @@ library(extrafont)
     }
 
 
-    #' Basemap
+    #' Get Basemap
     #'
+    #' @param spdf PEPFAR ORGs Spatial Data
+    #' @param cntry OU Name
+    #' @param terr_raster RasterLayer
+    #' @return ggplot plot of base map
     #'
     get_basemap <- function(spdf, cntry = NULL, terr_raster = NULL) {
 
@@ -191,11 +221,13 @@ library(extrafont)
         return(m)
     }
 
-    #terr <- get_raster()
-    #get_basemap(spdf_pepfar, cntry = cntry, terr_raster = terr)
 
-    #' Viz geodata
+    #' Map org geodata
     #'
+    #' @param spdf PEPFAR ORGs Spatial Data
+    #' @param org_uid ORG uid
+    #' @param title Plot title
+    #' @return ggplot plot of the map
     #'
     map_org <- function(spdf, org_uid = NULL, title = NULL) {
 
@@ -219,14 +251,21 @@ library(extrafont)
         return(m)
     }
 
-    #map_org(spdf_ou, org_uid = "XOivy2uDpMF")
-    #map_org(spdf_ou, org_uid = "XOivy2uDpMF", title = "Testing")
 
     #' Map VL S/C/nC
     #'
+    #' @param spdf PEPFAR Spatial Data
+    #' @param vl_variable Viral Load Variable
+    #' @param cntry OU Name
+    #' @param terr_raster RasterLayer
+    #' @param caption Add caption to the output?
+    #' @param save Save the output to ./Graphics folder
+    #' @return ggplot plot of the map
     #'
-    map_viralload <- function(spdf, df, vl_variable, cntry, terr_raster, save = FALSE) {
+    map_viralload <- function(spdf, df, vl_variable, cntry,
+                              terr_raster, caption = TRUE, save = FALSE) {
 
+        # Variables
         df_geo <- {{spdf}}
 
         country <- {{cntry}}
@@ -248,36 +287,59 @@ library(extrafont)
         base_map <- get_basemap(spdf = df_geo, cntry = country, terr_raster = terr)
 
         # Map specific variable
-        # theme_map <- case_when(
-        #     tolower(vl_var) == "vls" ~ (base_map + geom_sf(data = df_geo2, aes(fill = VLS), lwd = .2, color = grey10k)),
-        #     tolower(vl_var) == "vlc" ~ (base_map + geom_sf(data = df_geo2, aes(fill = VLC), lwd = .2, color = grey10k)),
-        #     TRUE ~ (base_map + geom_sf(data = df_geo2, aes(fill = VLnC), lwd = .2, color = grey10k))
-        # )
-
         if (tolower(vl_var) == "vls") {
+
             theme_map <- base_map +
-                geom_sf(data = df_geo2, aes(fill = VLS), lwd = .2, color = grey10k)
+                geom_sf(data = df_geo2, aes(fill = VLS), lwd = .2, color = grey10k) +
+                scale_fill_viridis_c(
+                    option = "viridis",
+                    alpha = 0.9,
+                    direction = -1,
+                    breaks = c(0, .25, .50, .75, 1.00),
+                    limits = c(0, 1),
+                    labels = percent
+                )
         }
         else if (tolower(vl_var) == "vlc") {
+
             theme_map <- base_map +
-                geom_sf(data = df_geo2, aes(fill = VLc), lwd = .2, color = grey10k)
+                geom_sf(data = df_geo2, aes(fill = VLC), lwd = .2, color = grey10k) +
+                scale_fill_viridis_c(
+                    option = "magma",
+                    alpha = 0.9,
+                    direction = -1,
+                    breaks = c(0, .25, .50, .75, 1.00),
+                    limits = c(0, 1),
+                    labels = percent
+                )
         }
         else {
+
             theme_map <- base_map +
-                geom_sf(data = df_geo2, aes(fill = VLnC), lwd = .2, color = grey10k)
+                geom_sf(data = df_geo2, aes(fill = VLnC), lwd = .2, color = grey10k) +
+                scale_fill_gradient2(
+                    low = "yellow",
+                    high = "brown",
+                    breaks = c(0, .25, .50, .75, 1.00),
+                    limits = c(0, 1),
+                    labels = percent
+                )
         }
 
-
+        # Add country boundaries and apply map theme
         theme_map <- theme_map +
-            scale_fill_gradient2(
-                low = "yellow",
-                high = "brown",,
-                limits = c(0, 1),
-                labels = percent
-            ) +
             geom_sf(data = df_geo0, colour = grey90k, fill = NA, size = 1) +
-            si_style_map() +
-            labs(caption = get_caption(var = vl_var)) +
+            si_style_map()
+
+
+        # Add Caption
+        if (caption == TRUE) {
+            theme_map <- theme_map +
+                labs(caption = get_caption(country, var = vl_var))
+        }
+
+        # Update legend size and position
+        theme_map <- theme_map +
             theme(
                 legend.position =  "bottom",
                 legend.direction = "horizontal",
@@ -288,18 +350,79 @@ library(extrafont)
         print(theme_map)
 
         if(save == TRUE) {
-            ggsave(here::here("Graphics", get_output_name(country, var = vl_var)),
-                   plot = last_plot(), scale = 1.2, dpi = 400, width = 10, height = 7, units = "in")
+            ggsave(
+                here::here("Graphics", get_output_name(country, var = vl_var)),
+                plot = last_plot(), scale = 1.2, dpi = 400,
+                width = 10, height = 7, units = "in"
+            )
         }
 
         return(theme_map)
     }
 
 
+    #' Map all VL Variables
+    #'
+    #' @param spdf PEPFAR Spatial Data
+    #' @param df wrangled VL data frame
+    #' @param cntry OU Name
+    #' @param terr_raster RasterLayer
+    #' @param save Save the output to ./Graphics folder
+    #' @return ggplot plot of the map
+    #'
+    map_viralloads <- function(spdf, df, cntry, terr_raster, save = FALSE) {
+
+        df_geo <- {{spdf}}
+        df_vl <- {{df}}
+        country <- {{cntry}}
+        terr <- {{terr_raster}}
+
+        # VLS
+        m_vls <- map_viralload(spdf = df_geo,
+                               df = df_vl,
+                               vl_variable = "VLS",
+                               cntry = country,
+                               terr_raster = terr,
+                               caption = FALSE)
+
+        # VLC
+        m_vlc <- map_viralload(spdf = spdf_pepfar,
+                               df = df_vl,
+                               vl_variable = "VLC",
+                               cntry = country,
+                               terr_raster = terr,
+                               caption = FALSE)
+
+        # VLnC
+        m_vlnc <- map_viralload(spdf = spdf_pepfar,
+                                df = df_vl,
+                                vl_variable = "VLnC",
+                                cntry = country,
+                                terr_raster = terr,
+                                caption = FALSE)
+
+        # ALL
+        m_all <- (m_vls + m_vlc + m_vlnc) +
+            plot_layout(widths = c(1,1,1)) +
+            plot_annotation(
+                caption = get_caption(country)
+            )
+
+        print(m_all)
+
+        # Save output
+        if (save == TRUE) {
+            ggsave(here("Graphics", get_output_name(country, var = "VL")),
+               plot = last_plot(), scale = 1.2, dpi = 400, width = 10, height = 7, units = "in")
+        }
+
+        return(m_all)
+    }
+
+
 # DATA --------------------------------------------------------------
 
     ## File path + name
-
     file_psnu_im <- list.files(
             path = dir_merdata,
             pattern = psnu_im,
@@ -308,41 +431,31 @@ library(extrafont)
         )
 
     ## MER PSNU Data
-
     df_psnu <- vroom(file_psnu_im)
 
     df_psnu %>% glimpse()
 
-
+    ## OUs
     df_ous <- df_psnu %>%
         distinct(operatingunit, operatingunituid) %>%
         arrange(operatingunit)
-
-    df_ous %>% prinf()
-
 
     df_cntries <- df_psnu %>%
         distinct(operatingunit, countryname) %>%
         arrange(operatingunit, countryname)
 
-    df_cntries %>% prinf()
-
-
+    ## SNU1
     df_snus <- df_psnu %>%
-        select(operatingunit, countryname, snu1, snu1uid) %>%
+        dplyr::select(operatingunit, countryname, snu1, snu1uid) %>%
         distinct(operatingunit, countryname, snu1, snu1uid) %>%
         filter(!is.na(snu1)) %>%
         arrange(operatingunit, countryname, snu1)
 
-    df_snus %>% head()
-
-
+    ## PSNU
     df_psnus <- df_psnu %>%
-        select(operatingunit, operatingunituid, countryname, snu1, snu1uid, psnu, psnuuid) %>%
+        dplyr::select(operatingunit, operatingunituid, countryname, snu1, snu1uid, psnu, psnuuid) %>%
         distinct(operatingunit, countryname, snu1, snu1uid, psnu, psnuuid) %>%
         arrange(operatingunit, countryname, snu1, psnu)
-
-    df_psnus %>% head()
 
 
     ## List of Distinct Orgs
@@ -363,7 +476,6 @@ library(extrafont)
     lst_ouuid <- df_ous %>%
         pull(operatingunituid)
 
-
     ## MER Data Munging
 
     ## Filter & Summarize
@@ -378,7 +490,7 @@ library(extrafont)
         summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
         ungroup() %>%
         reshape_msd(clean = TRUE) %>%
-        select(-period_type) %>%
+        dplyr::select(-period_type) %>%
         spread(indicator, val)
 
 
@@ -411,9 +523,6 @@ library(extrafont)
             )
         )
 
-    df_vl %>% glimpse()
-
-
 
     ## PEPFAR OU/Countries
 
@@ -421,19 +530,12 @@ library(extrafont)
         as_tibble() %>%
         rename(countryname = country)
 
-    ous %>% glimpse()
-
-    ous %>% prinf()
-
-
     ## Geodata
 
     ## Terrain Raster
-
     terr <- get_raster(terr_path = dir_terr)
 
     ## ORGs
-
     spdf_pepfar <- list.files(
             path = dir_geo,
             pattern = "VcPepfarPolygons.shp",
@@ -444,12 +546,10 @@ library(extrafont)
 
 
     ## Geo - identify ous
-
     spdf_pepfar <- spdf_pepfar %>%
         left_join(ous, by = "uid")
 
     ## Geo - identify snu1
-
     spdf_pepfar <- spdf_pepfar %>%
         left_join(df_snus, by = c("uid" = "snu1uid")) %>%
         rename(countryname = countryname.x) %>%
@@ -463,10 +563,9 @@ library(extrafont)
                 TRUE ~ countryname
             )
         ) %>%
-        select(-countryname.y)
+        dplyr::select(-countryname.y)
 
     ## Geo - identify psnu
-
     spdf_pepfar <- spdf_pepfar %>%
         left_join(df_psnus, by = c("uid" = "psnuuid")) %>%
         rename(
@@ -492,12 +591,13 @@ library(extrafont)
                 TRUE ~ snu1
             )
         ) %>%
-        select(-ends_with(".y"))
+        dplyr::select(-ends_with(".y"))
 
 
 # VIZ --------------------------------------
 
     ## What are these orgs?
+
     spdf_pepfar %>%
         dplyr::filter(is.na(type)) %>%
         dplyr::select(uid) %>%
@@ -516,27 +616,33 @@ library(extrafont)
     spdf_pepfar %>%
         filter(!is.na(countryname), type == "Country") %>%
         ggplot() +
-        geom_sf(aes(fill = countryname), colour = "white", size = .5, show.legend = F) +
+        geom_sf(aes(fill = operatingunit), colour = "white", size = .5, show.legend = F) +
         si_style_map()
 
 
     ## Individual country maps
-    spdf_ou %>%
+    spdf_pepfar %>%
         st_set_geometry(NULL) %>%
+        filter(type == "OU") %>%
         pull(uid) %>%
         first() %>%
-        map(.x, .f = ~map_org(spdf_ou, org_uid = .x, title = .x))
+        map(.x, .f = ~map_org(spdf_pepfar, org_uid = .x, title = .x))
 
-    spdf_ou %>%
+    spdf_pepfar %>%
         st_set_geometry(NULL) %>%
+        filter(type == "OU") %>%
         pull(uid) %>%
         last() %>%
-        map(.x, .f = ~map_org(spdf_ou, org_uid = .x, title = .x))
+        map(.x, .f = ~map_org(spdf_pepfar,
+                              org_uid = .x,
+                              title = spdf_pepfar %>%
+                                  filter(uid == .x) %>% pull(countryname)))
 
 
     ## Individual country basemaps => Ressource Intensive
-    spdf_ou %>%
+    spdf_pepfar %>%
         st_set_geometry(NULL) %>%
+        filter(type == "OU") %>%
         pull(countryname) %>%
         nth(8) %>%                  # This is test for Cote d'Ivoire
         map(.x, .f = ~get_basemap(spdf = spdf_pepfar,
@@ -544,7 +650,7 @@ library(extrafont)
                                   terr_raster = terr))
 
 
-    ## Individual VLS maps
+    ## Test Individual VL maps
     map_viralload(spdf = spdf_pepfar,
                   df = df_vl,
                   vl_variable = "VLS",
@@ -555,15 +661,29 @@ library(extrafont)
                   df = df_vl,
                   vl_variable = "VLC",
                   cntry = "Zambia",
-                  terr_raster = terr,
-                  save = TRUE)
+                  terr_raster = terr)
+
+    map_viralload(spdf = spdf_pepfar,
+                  df = df_vl,
+                  vl_variable = "VLnC",
+                  cntry = "Zambia",
+                  terr_raster = terr)
+
+    map_viralloads(spdf = spdf_pepfar,
+                   df = df_vl,
+                   cntry = "Zambia",
+                   terr_raster = terr)
 
 
-    df_vl %>%
+    ## Batch mapping
+
+    map_ous <- df_vl %>%
         filter(!str_detect(operatingunit, " Region$"), operatingunit != "South Africa") %>%
         distinct(operatingunit) %>%
-        pull() %>%
-        #nth(3) %>%                  # This is a test for DRC
+        pull()
+
+    ## VLS
+    map_ous %>%
         map(.x, .f = ~map_viralload(spdf = spdf_pepfar,
                                     df = df_vl,
                                     vl_variable = "VLS",
@@ -571,53 +691,33 @@ library(extrafont)
                                     terr_raster = terr,
                                     save = TRUE))
 
+    ## VLC
+    map_ous %>%
+        map(.x, .f = ~map_viralload(spdf = spdf_pepfar,
+                                    df = df_vl,
+                                    vl_variable = "VLC",
+                                    cntry = .x,
+                                    terr_raster = terr,
+                                    save = TRUE))
+
+    ## VLnC
+    map_ous %>%
+        map(.x, .f = ~map_viralload(spdf = spdf_pepfar,
+                                    df = df_vl,
+                                    vl_variable = "VLnC",
+                                    cntry = .x,
+                                    terr_raster = terr,
+                                    save = TRUE))
 
 
-
-###
-
-viz_map <- terrain_map(countries = "Mozambique", terr_path = dir_terr, mask = TRUE) +
-    geom_sf(data = mozgeo %>% filter(!is.na(Not_Cov)), aes(fill = Not_Cov), lwd = .2, color = grey10k) +
-    geom_sf(data = moz1, fill = NA, lwd = .2, color = grey30k) +
-    scale_fill_gradient2(
-        low = "yellow",
-        high = "brown",
-        labels = percent)+
-    si_style_map() +
-    theme(
-        legend.position =  c(.9, .2),
-        legend.direction = "vertical",
-        legend.key.width = ggplot2::unit(.5, "cm"),
-        legend.key.height = ggplot2::unit(1, "cm")
-    )
-
-zim_map<-terrain_map(countries = "Zimbabwe", terr_path = dir_terr, mask = TRUE) +
-    geom_sf(data = zimgeo %>% filter(!is.na(Not_Cov)), aes(fill = Not_Cov), lwd = .2, color = grey10k) +
-    geom_sf(data = zim1, fill = NA, lwd = .2, color = grey30k) +
-    scale_fill_gradient2(
-        low = "yellow",
-        high = "brown",
-        labels=percent_format(accuracy = 1))+
-    si_style_map() +
-    theme(
-        legend.position =  "bottom",
-        legend.key.width = ggplot2::unit(1, "cm"),
-        legend.key.height = ggplot2::unit(.5, "cm")
-    )
+    ## ALL
+    map_ous %>%
+        map(.x, .f = ~map_viralloads(spdf = spdf_pepfar,
+                                     df = df_vl,
+                                     cntry = .x,
+                                     terr_raster = terr,
+                                     save = TRUE))
 
 
-
-(moz_map + zim_map) +
-    plot_layout(widths = c(1,1)) +
-    plot_annotation(
-        caption = "Source: FY20Q3i MSD - USAID Only,
-VLC = TX_PVLS / TX_CURR (2 periods prior)
-Not Covered = 1-VLC")
-
-
-
-ggsave(here("Graphics", "FY20Q3_ViralLoad_BottomOUs.png"),
-       scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
-
-
+## END ##
 
