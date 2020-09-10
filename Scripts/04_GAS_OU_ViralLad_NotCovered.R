@@ -59,6 +59,44 @@ library(extrafont)
 
 # FUNCTIONS ---------------------------------------------------------
 
+    #' get_title(country, var = vl_var)
+    #'
+    #' @param country country name
+    #' @param var df variable
+    #' @return plot caption
+    #'
+    get_title <- function(var, country = NULL) {
+
+        title <- toupper({{country}})
+
+        var_name <- toupper({{var}})
+
+        var_label <- ""
+
+        # Get label
+        if ( var_name == "VLS" ) {
+            var_label <- "Viral Load Suppression"
+        }
+        else if (var_name == "VLC") {
+            var_label <- "Viral Load Coverage"
+        }
+        else if (var_name == "VLNC") {
+            var_label <- "Viral Load Not-Covered"
+        }
+        else {
+            var_label <- "Viral Load"
+        }
+
+        # Title
+        if (!is.null({{country}})) {
+            title <- paste0(toupper({{country}}), " - ", var_label)
+        }
+        else {
+            title <- var_label
+        }
+
+        return(title)
+    }
 
     #' Graphic caption
     #'
@@ -268,6 +306,8 @@ library(extrafont)
         # Variables
         df_geo <- {{spdf}}
 
+        df_vl <- {{df}}
+
         country <- {{cntry}}
 
         vl_var <- {{vl_variable}}
@@ -280,7 +320,7 @@ library(extrafont)
         # PSNU Geo + VL data
         df_geo2 <- df_geo %>%
             filter(countryname == country, type == "PSNU") %>%
-            left_join(df, by = c("uid" = "psnuuid")) %>%
+            left_join(df_vl, by = c("uid" = "psnuuid")) %>%
             filter(!is.na(VLnC))
 
         # Basemap
@@ -334,8 +374,17 @@ library(extrafont)
 
         # Add Caption
         if (caption == TRUE) {
+
             theme_map <- theme_map +
-                labs(caption = get_caption(country, var = vl_var))
+                labs(
+                    title = get_title(var = vl_var),
+                    caption = get_caption(country, var = vl_var)
+                )
+        }
+        else {
+
+            theme_map <- theme_map +
+                labs(title = get_title(var = vl_var))
         }
 
         # Update legend size and position
@@ -454,7 +503,7 @@ library(extrafont)
     ## PSNU
     df_psnus <- df_psnu %>%
         dplyr::select(operatingunit, operatingunituid, countryname, snu1, snu1uid, psnu, psnuuid) %>%
-        distinct(operatingunit, countryname, snu1, snu1uid, psnu, psnuuid) %>%
+        distinct(operatingunit, countryname, snu1, snu1uid, psnu, psnuuid) %>% View()
         arrange(operatingunit, countryname, snu1, psnu)
 
 
@@ -589,6 +638,10 @@ library(extrafont)
             snu1 = case_when(
                 is.na(snu1) & type == "PSNU" ~ snu1.y,
                 TRUE ~ snu1
+            ),
+            type = case_when(
+                !is.na(snu1uid) & uid == snu1uid & type == "SNU1" ~ "PSNU",
+                TRUE ~ type
             )
         ) %>%
         dplyr::select(-ends_with(".y"))
@@ -651,27 +704,33 @@ library(extrafont)
 
 
     ## Test Individual VL maps
+
+    cname <- "Nigeria"
+    cname <- "Kenya"
+    cname <- "Ukraine" # Nah
+    cname <- "Lesotho"
+
     map_viralload(spdf = spdf_pepfar,
                   df = df_vl,
                   vl_variable = "VLS",
-                  cntry = "Zambia",
+                  cntry = cname,
                   terr_raster = terr)
 
     map_viralload(spdf = spdf_pepfar,
                   df = df_vl,
                   vl_variable = "VLC",
-                  cntry = "Zambia",
+                  cntry = cname,
                   terr_raster = terr)
 
     map_viralload(spdf = spdf_pepfar,
                   df = df_vl,
                   vl_variable = "VLnC",
-                  cntry = "Zambia",
+                  cntry = cname,
                   terr_raster = terr)
 
     map_viralloads(spdf = spdf_pepfar,
                    df = df_vl,
-                   cntry = "Zambia",
+                   cntry = cname,
                    terr_raster = terr)
 
 
