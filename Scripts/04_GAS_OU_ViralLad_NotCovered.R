@@ -344,6 +344,7 @@ library(extrafont)
                     option = "viridis",
                     alpha = 0.9,
                     direction = -1,
+                    na.value = grey10k,
                     breaks = c(0, .25, .50, .75, 1.00),
                     limits = c(0, 1),
                     labels = percent
@@ -357,6 +358,7 @@ library(extrafont)
                     option = "magma",
                     alpha = 0.9,
                     direction = -1,
+                    na.value = grey10k,
                     breaks = c(0, .25, .50, .75, 1.00),
                     limits = c(0, 1),
                     labels = percent
@@ -369,6 +371,7 @@ library(extrafont)
                 scale_fill_gradient2(
                     low = "yellow",
                     high = "brown",
+                    na.value = grey10k,
                     breaks = c(0, .25, .50, .75, 1.00),
                     limits = c(0, 1),
                     labels = percent
