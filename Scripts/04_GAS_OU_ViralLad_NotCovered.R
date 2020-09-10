@@ -65,7 +65,7 @@ library(extrafont)
     #' @param var df variable
     #' @return plot caption
     #'
-    get_title <- function(var, country = NULL) {
+    get_title <- function(var, peds = FALSE, country = NULL) {
 
         title <- toupper({{country}})
 
@@ -85,6 +85,11 @@ library(extrafont)
         }
         else {
             var_label <- "Viral Load"
+        }
+
+        # PEDS flag
+        if (peds == TRUE) {
+            var_label <- paste0(var_label, " (Under 15yo)")
         }
 
         # Title
@@ -296,12 +301,14 @@ library(extrafont)
     #' @param vl_variable Viral Load Variable
     #' @param cntry OU Name
     #' @param terr_raster RasterLayer
+    #' @param peds VL for <15
     #' @param caption Add caption to the output?
     #' @param save Save the output to ./Graphics folder
     #' @return ggplot plot of the map
     #'
     map_viralload <- function(spdf, df, vl_variable, cntry,
-                              terr_raster, caption = TRUE, save = FALSE) {
+                              terr_raster, peds = FALSE,
+                              caption = TRUE, save = FALSE) {
 
         # Variables
         df_geo <- {{spdf}}
@@ -313,6 +320,8 @@ library(extrafont)
         vl_var <- {{vl_variable}}
 
         terr <- {{terr_raster}}
+
+        peds_title <- {{peds}}
 
         # Country boundaries
         df_geo0 <- df_geo %>% filter(countryname == country, type == "OU")
@@ -377,14 +386,14 @@ library(extrafont)
 
             theme_map <- theme_map +
                 labs(
-                    title = get_title(var = vl_var),
+                    title = get_title(var = vl_var, peds = peds_title),
                     caption = get_caption(country, var = vl_var)
                 )
         }
         else {
 
             theme_map <- theme_map +
-                labs(title = get_title(var = vl_var))
+                labs(title = get_title(var = vl_var, peds = peds_title))
         }
 
         # Update legend size and position
@@ -463,6 +472,59 @@ library(extrafont)
         if (save == TRUE) {
             ggsave(here("Graphics", get_output_name(country, var = "VL")),
                plot = last_plot(), scale = 1.2, dpi = 400, width = 10, height = 7, units = "in")
+        }
+
+        return(m_all)
+    }
+
+
+    #' Map PEDS VL Variables
+    #'
+    #' @param spdf PEPFAR Spatial Data
+    #' @param df wrangled VL data frame
+    #' @param cntry OU Name
+    #' @param terr_raster RasterLayer
+    #' @param save Save the output to ./Graphics folder
+    #' @return ggplot plot of the map
+    #'
+    map_peds_viralloads <- function(spdf, df, cntry, terr_raster, save = FALSE) {
+
+        df_geo <- {{spdf}}
+        df_vl <- {{df}}
+        country <- {{cntry}}
+        terr <- {{terr_raster}}
+
+        # VLS
+        m_vls <- map_viralload(spdf = df_geo,
+                               df = df_vl,
+                               vl_variable = "VLS",
+                               cntry = country,
+                               terr_raster = terr,
+                               peds = TRUE,
+                               caption = FALSE)
+
+        # VLC
+        m_vlc <- map_viralload(spdf = spdf_pepfar,
+                               df = df_vl,
+                               vl_variable = "VLC",
+                               cntry = country,
+                               terr_raster = terr,
+                               peds = TRUE,
+                               caption = FALSE)
+
+        # ALL
+        m_all <- (m_vlc + m_vls) +
+            plot_layout(widths = c(1,1)) +
+            plot_annotation(
+                caption = get_caption(country)
+            )
+
+        print(m_all)
+
+        # Save output
+        if (save == TRUE) {
+            ggsave(here("Graphics", str_replace(get_output_name(country, var = "VLC_S"), "_ViralLoad_", "_ViralLoad_PEDS_")),
+                   plot = last_plot(), scale = 1.2, dpi = 400, width = 10, height = 7, units = "in")
         }
 
         return(m_all)
@@ -567,7 +629,49 @@ library(extrafont)
                 TRUE ~ psnu
             ),
             psnu_label = case_when(
-                VLnC > .2 ~ psnu_short,
+                VLnC > .7 ~ psnu_short,
+                TRUE ~ ""
+            )
+        )
+
+
+    ## VL PEDs
+    df_vl_u15 <- df_psnu %>%
+        filter(fiscal_year == rep_fy,
+               fundingagency == rep_agency,
+               indicator %in% c("TX_PVLS","TX_CURR"),
+               standardizeddisaggregate %in% c("Age/Sex/HIVStatus","Age/Sex/Indication/HIVStatus"),
+               operatingunituid %in% lst_ouuid) %>%
+        mutate(indicator = ifelse(numeratordenom == "D", paste0(indicator, "_D"), indicator)) %>%
+        group_by(fiscal_year, operatingunit, psnuuid, psnu, trendscoarse, indicator) %>%
+        summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
+        ungroup() %>%
+        reshape_msd(clean = TRUE) %>%
+        dplyr::select(-period_type) %>%
+        spread(indicator, val) %>%
+        group_by(operatingunit, psnuuid, psnu, trendscoarse) %>%
+        mutate(VLC = TX_PVLS_D / lag(TX_CURR, 2, order_by = period)) %>%
+        ungroup() %>%
+        filter(period == rep_pd, trendscoarse == "<15") %>%
+        mutate(
+            VLS = (TX_PVLS / TX_PVLS_D) * VLC,
+            VLnC = case_when(
+                VLC > 1 ~ 0,
+                TRUE ~ 1 - VLC
+            ),
+            ou_label = paste0(
+                operatingunit,
+                " (",
+                lag(TX_CURR, 2, order_by = period) %>% comma(accuracy = 1),
+                ")"
+            ),
+            psnu_short = case_when(
+                str_detect(psnu, " County$") ~  str_remove(psnu, " County$"),
+                str_detect(psnu, " District$") ~  str_remove(psnu, " District$"),
+                TRUE ~ psnu
+            ),
+            psnu_label = case_when(
+                VLnC > .7 ~ psnu_short,
                 TRUE ~ ""
             )
         )
@@ -709,6 +813,7 @@ library(extrafont)
     cname <- "Kenya"
     cname <- "Ukraine" # Nah
     cname <- "Lesotho"
+    cname <- "Zambia"
 
     map_viralload(spdf = spdf_pepfar,
                   df = df_vl,
@@ -730,6 +835,12 @@ library(extrafont)
 
     map_viralloads(spdf = spdf_pepfar,
                    df = df_vl,
+                   cntry = cname,
+                   terr_raster = terr)
+
+    # PEDS Test
+    map_peds_viralloads(spdf = spdf_pepfar,
+                   df = df_vl_u15,
                    cntry = cname,
                    terr_raster = terr)
 
@@ -773,6 +884,14 @@ library(extrafont)
     map_ous %>%
         map(.x, .f = ~map_viralloads(spdf = spdf_pepfar,
                                      df = df_vl,
+                                     cntry = .x,
+                                     terr_raster = terr,
+                                     save = TRUE))
+
+    ## PEDS ALL
+    map_ous %>%
+        map(.x, .f = ~map_peds_viralloads(spdf = spdf_pepfar,
+                                     df = df_vl_u15,
                                      cntry = .x,
                                      terr_raster = terr,
                                      save = TRUE))
