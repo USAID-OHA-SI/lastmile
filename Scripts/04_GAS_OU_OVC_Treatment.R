@@ -59,13 +59,13 @@ library(extrafont)
 
     ## NOTE: These functions will end up in gisr package
 
-    #' get_title(country, var = vl_var)
+    #' Get Title
     #'
     #' @param country country name
     #' @param var df variable
     #' @return plot caption
     #'
-    get_title <- function(var, peds = FALSE, country = NULL) {
+    get_title <- function(country, var = NULL) {
 
         title <- toupper({{country}})
 
@@ -74,23 +74,7 @@ library(extrafont)
         var_label <- ""
 
         # Get label
-        if ( var_name == "VLS" ) {
-            var_label <- "Viral Load Suppression"
-        }
-        else if (var_name == "VLC") {
-            var_label <- "Viral Load Coverage"
-        }
-        else if (var_name == "VLNC") {
-            var_label <- "Viral Load Not-Covered"
-        }
-        else {
-            var_label <- "Viral Load"
-        }
 
-        # PEDS flag
-        if (peds == TRUE) {
-            var_label <- paste0(var_label, " (Under 15yo)")
-        }
 
         # Title
         if (!is.null({{country}})) {
@@ -113,30 +97,8 @@ library(extrafont)
 
         caption <- paste0(
             "OHA/SIEI - Data Source: FY20Q3i MSD - USAID Only,
-            VLC = TX_PVLS / TX_CURR (2 periods prior), Not Covered = 1 - VLC\n",
-            toupper({{country}})
-        )
-
-        if (is.null({{var}})) {
-
-            caption <- paste0(
-                caption,
-                " - Variable mapped: VLS, VLC, VLnC"
-            )
-        }
-        else {
-
-            caption <- paste0(
-                caption,
-                " - ",
-                "Variable mapped: ",
-                toupper({{var}})
-            )
-        }
-
-        caption <- paste0(
-            caption,
-            ", Produced on ",
+            Proxy Coverage = OVC_HIV_STAT_POS / TX_CURR, Age < 20\n",
+            toupper({{country}}), ", Produced on ",
             format(Sys.Date(), "%Y%m%d")
         )
 
@@ -150,10 +112,10 @@ library(extrafont)
     #' @param var df variable
     #' @return plot file name
     #'
-    get_output_name <- function(country, var = "VLC") {
+    get_output_name <- function(country, var = "Proxy Coverage") {
 
-        name <- paste0("FY20Q3_ViralLoad_",
-                       toupper({{var}}),
+        name <- paste0("FY20Q2_",
+                       str_replace({{var}}, " ", "_"),
                        "_", toupper({{country}}),
                        "_",
                        format(Sys.Date(), "%Y%m%d"),
@@ -427,11 +389,10 @@ library(extrafont)
             ) %>%
             ggplot(aes(x = reorder(label, proxy_coverage), y = proxy_coverage)) +
             geom_point(aes(size = TX_CURR, fill = proxy_coverage),
-                       color = grey50k,
-                       shape = 21,
-                       show.legend = F) +
+                       color = grey50k, shape = 21, show.legend = F) +
             geom_text(aes(label = percent(proxy_coverage, accuracy = 1)),
-                      position = position_nudge(y = .15), size = 3, color = grey50k) +
+                      position = position_nudge(x = .15, y = .15),
+                      size = 3, color = grey50k) +
             scale_size_continuous(range = c(3,8)) +
             scale_color_viridis_c(option = "magma",
                                   direction = -1,
@@ -444,10 +405,10 @@ library(extrafont)
             scale_y_continuous(position = "right", labels = percent) +
             labs(x = "", y = "") +
             coord_flip() +
-            annotate(geom = "curve", x = 1.25, y = .65, xend = 1, yend = .33, curvature = .3,
-                     arrow = arrow(length = unit(4, "mm")), color = grey50k) +
-            annotate(geom = "text", x = 1, y = .68, label = "Circle Sized by TX_CURR", hjust="left",
-                     size = 4, color = grey50k, family = "Gill Sans MT") +
+            # annotate(geom = "curve", x = 1.25, y = .65, xend = 1, yend = .33, curvature = .3,
+            #          arrow = arrow(length = unit(4, "mm")), color = grey50k) +
+            # annotate(geom = "text", x = 1, y = .68, label = "Circle Sized by TX_CURR", hjust="left",
+            #          size = 4, color = grey50k, family = "Gill Sans MT") +
             annotate(geom = "text", x = 13, y = .88, label = "90% threshold", hjust="right",
                      size = 4, color = grey50k, family = "Gill Sans MT") +
             si_style_nolines() +
@@ -487,71 +448,19 @@ library(extrafont)
         graph <- (map + viz) +
             plot_layout(nrow = 1) +
             plot_annotation(
-                title="",
-                caption = "Source: FY20Q3i MSD - USAID Only,
-                    Proxy Coverage=OVC_HIV_STAT_POS/TX_CURR age <20")
+                title = "FY20Q2 | OVC Program Coverage Proxy of TX_CURR (Under 20yo)",
+                subtitle = "The size of circles represents the volume of TX_CURR",
+                caption = get_caption(country)
+            )
 
         print(graph)
 
-
-        if ({{save}} == TRUE) {
-            ggsave(here("Graphics", paste0(touuper(country), "_OVC_TX_ProxyCoverage_dot.png")),
+        if (sgraph == TRUE) {
+            ggsave(here("Graphics", get_output_name(country)),
                scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
         }
 
         return(graph)
-    }
-
-    #' Map PEDS VL Variables
-    #'
-    #' @param spdf PEPFAR Spatial Data
-    #' @param df wrangled VL data frame
-    #' @param cntry OU Name
-    #' @param terr_raster RasterLayer
-    #' @param save Save the output to ./Graphics folder
-    #' @return ggplot plot of the map
-    #'
-    map_peds_viralloads <- function(spdf, df, cntry, terr_raster, save = FALSE) {
-
-        df_geo <- {{spdf}}
-        df_vl <- {{df}}
-        country <- {{cntry}}
-        terr <- {{terr_raster}}
-
-        # VLS
-        m_vls <- map_viralload(spdf = df_geo,
-                               df = df_vl,
-                               vl_variable = "VLS",
-                               cntry = country,
-                               terr_raster = terr,
-                               peds = TRUE,
-                               caption = FALSE)
-
-        # VLC
-        m_vlc <- map_viralload(spdf = spdf_pepfar,
-                               df = df_vl,
-                               vl_variable = "VLC",
-                               cntry = country,
-                               terr_raster = terr,
-                               peds = TRUE,
-                               caption = FALSE)
-
-        # ALL
-        m_all <- (m_vlc + m_vls) +
-            plot_layout(widths = c(1,1)) +
-            plot_annotation(
-                caption = get_caption(country)
-            )
-
-        print(m_all)
-
-        # Save output
-        if (save == TRUE) {
-            ggsave(here("Graphics", str_replace(get_output_name(country, var = "VLC_S"), "_ViralLoad_", "_ViralLoad_PEDS_")),
-                   plot = last_plot(), scale = 1.2, dpi = 400, width = 10, height = 7, units = "in")
-        }
-
-        return(m_all)
     }
 
 
@@ -646,6 +555,8 @@ library(extrafont)
 
     df_psnu %>% glimpse()
 
+    df_ous <- df_psnu %>%
+        distinct(operatingunit, operatingunituid)
 
     ## SNU1
     df_snus <- df_psnu %>%
@@ -747,69 +658,9 @@ library(extrafont)
 
 # VIZ --------------------------------------
 
-    ## What are these orgs?
-    ## TODO: use org hierarchy to identify these polygons
-    spdf_pepfar %>%
-        dplyr::filter(is.na(type)) %>%
-        dplyr::select(uid) %>%
-        plot()
-
-    ## Geo-units
-
-    ## OUs [Regional + bilateral] => 28
-    spdf_pepfar %>%
-        dplyr::filter(!is.na(countryname), type == "OU") %>%
-        ggplot() +
-        geom_sf(aes(fill = countryname), colour = "white", size = .5, show.legend = F) +
-        si_style_map()
-
-    ## Countries [Members of Regional OUs, also used as SNU1] => 44
-    spdf_pepfar %>%
-        filter(!is.na(countryname), type == "Country") %>%
-        ggplot() +
-        geom_sf(aes(fill = operatingunit), colour = "white", size = .5, show.legend = F) +
-        si_style_map()
-
-
-    ## Individual country maps
-    spdf_pepfar %>%
-        st_set_geometry(NULL) %>%
-        filter(type == "OU") %>%
-        pull(uid) %>%
-        first() %>%
-        map(.x, .f = ~map_org(spdf_pepfar,
-                              org_uid = .x,
-                              title = .x))
-
-    spdf_pepfar %>%
-        st_set_geometry(NULL) %>%
-        filter(type == "OU") %>%
-        pull(uid) %>%
-        last() %>%
-        map(.x, .f = ~map_org(spdf_pepfar,
-                              org_uid = .x,
-                              title = spdf_pepfar %>%
-                                  filter(uid == .x) %>% pull(countryname)))
-
-
-    ## Individual country basemaps => Ressource Intensive
-    spdf_pepfar %>%
-        st_set_geometry(NULL) %>%
-        filter(type == "OU") %>%
-        pull(countryname) %>%
-        nth(8) %>%                  # This is test for Cote d'Ivoire
-        map(.x, .f = ~get_basemap(spdf = spdf_pepfar,
-                                  cntry = .x,
-                                  terr_raster = terr))
-
-
     ## Test Individual OVC maps
-
-    cname <- "Nigeria"
-    cname <- "Kenya"
-    cname <- "Ukraine" # Nah
-    cname <- "Lesotho"
     cname <- "Zambia"
+
 
     map_ovc_coverage(spdf = spdf_pepfar,
                   df = df_ovc_cov,
@@ -824,71 +675,23 @@ library(extrafont)
     viz_ovc_coverage(spdf = spdf_pepfar,
                      df = df_ovc_cov,
                      terr_raster = terr,
-                     cntry = cname)
+                     cntry = cname,
+                     save = TRUE)
 
 
-
-    # PEDS Test
-    map_peds_viralloads(spdf = spdf_pepfar,
-                   df = df_vl_u15,
-                   cntry = cname,
-                   terr_raster = terr)
-
-
-
-
-
-
-    ## Batch mapping
-
-    map_ous <- df_vl %>%
-        filter(!str_detect(operatingunit, " Region$"), operatingunit != "South Africa") %>%
+    # Batch mapping
+    df_ovc_cov %>%
         distinct(operatingunit) %>%
-        pull()
-
-    ## VLS
-    map_ous %>%
-        map(.x, .f = ~map_viralload(spdf = spdf_pepfar,
-                                    df = df_vl,
-                                    vl_variable = "VLS",
-                                    cntry = .x,
-                                    terr_raster = terr,
-                                    save = TRUE))
-
-    ## VLC
-    map_ous %>%
-        map(.x, .f = ~map_viralload(spdf = spdf_pepfar,
-                                    df = df_vl,
-                                    vl_variable = "VLC",
-                                    cntry = .x,
-                                    terr_raster = terr,
-                                    save = TRUE))
-
-    ## VLnC
-    map_ous %>%
-        map(.x, .f = ~map_viralload(spdf = spdf_pepfar,
-                                    df = df_vl,
-                                    vl_variable = "VLnC",
-                                    cntry = .x,
-                                    terr_raster = terr,
-                                    save = TRUE))
+        pull() %>%
+        map(.x, .f = ~ viz_ovc_coverage(spdf = spdf_pepfar,
+                                        df = df_ovc_cov,
+                                        terr_raster = terr,
+                                        cntry = .x,
+                                        save = TRUE))
 
 
-    ## ALL
-    map_ous %>%
-        map(.x, .f = ~map_viralloads(spdf = spdf_pepfar,
-                                     df = df_vl,
-                                     cntry = .x,
-                                     terr_raster = terr,
-                                     save = TRUE))
 
-    ## PEDS ALL
-    map_ous %>%
-        map(.x, .f = ~map_peds_viralloads(spdf = spdf_pepfar,
-                                     df = df_vl_u15,
-                                     cntry = .x,
-                                     terr_raster = terr,
-                                     save = TRUE))
+
 
 
 ## END ##
