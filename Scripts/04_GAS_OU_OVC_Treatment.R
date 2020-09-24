@@ -481,21 +481,25 @@ library(extrafont)
         map <- map_ovc_coverage(df_geo, df_ovc, terr, country)
 
         # graph
-        plot_ovc_coverage(df_ovc, country)
+        viz <- plot_ovc_coverage(df_ovc, country)
 
         # VIZ COMBINED & SAVED
-        viz <- (zam_map_cov20 + dotplot) +
+        graph <- (map + viz) +
             plot_layout(nrow = 1) +
             plot_annotation(
                 title="",
                 caption = "Source: FY20Q3i MSD - USAID Only,
                     Proxy Coverage=OVC_HIV_STAT_POS/TX_CURR age <20")
 
+        print(graph)
+
 
         if ({{save}} == TRUE) {
             ggsave(here("Graphics", paste0(touuper(country), "_OVC_TX_ProxyCoverage_dot.png")),
                scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
         }
+
+        return(graph)
     }
 
     #' Map PEDS VL Variables
@@ -696,7 +700,7 @@ library(extrafont)
             proxy_coverage = case_when(
                 OVC_HIVSTAT_POS > 0 ~ OVC_HIVSTAT_POS/TX_CURR
             ),
-            shortname = str_remove(psnu, " District$")
+            shortname = str_remove(psnu, " District$| County$")
         ) %>%
         filter(
             period == rep_pd,
@@ -817,12 +821,22 @@ library(extrafont)
                       cntry = cname)
 
 
+    viz_ovc_coverage(spdf = spdf_pepfar,
+                     df = df_ovc_cov,
+                     terr_raster = terr,
+                     cntry = cname)
+
+
 
     # PEDS Test
     map_peds_viralloads(spdf = spdf_pepfar,
                    df = df_vl_u15,
                    cntry = cname,
                    terr_raster = terr)
+
+
+
+
 
 
     ## Batch mapping
