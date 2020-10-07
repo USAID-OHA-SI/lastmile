@@ -1,5 +1,6 @@
 ##  PROJECT: LMA/Geospatial Distributions
 ##  AUTHOR:  B.Kagniniwa & G.Sarfaty | USAID
+#   EDITED:  T. Essam (2020-10-01)
 ##  PURPOSE: Geo-depiction of VL - % not covered
 ##  LICENCE: MIT
 ##  DATE:    2020-09-04
@@ -20,12 +21,14 @@ library(ggrepel)
 library(here)
 library(ICPIutilities)
 library(extrafont)
+library(viridis)
+library(tidytext)
 
 # REQUIRED -------------------------------------------------------------------------------
 
     ## Get Credentials
 
-    source("./_secrets/credentials.R")
+    source("../../surprises/surprise.R")
 
 # GLOBALS -------------------------------------------------------------
 
@@ -42,11 +45,11 @@ library(extrafont)
 
     ## Q3 MER Data
 
-    psnu_im <- "^MER_.*_PSNU_IM_.*_20200814_.*.zip$"
+    psnu_im <- "^MER_.*_PSNU_IM_.*_20200918_.*.zip$"
 
     ## Reporting Filters
 
-    rep_agency = "USAID"
+    rep_agency = c("USAID", "HHS/CDC")
 
     rep_fy = 2020
     rep_qtr = 3
@@ -112,7 +115,7 @@ library(extrafont)
     get_caption <- function(country, var = NULL) {
 
         caption <- paste0(
-            "OHA/SIEI - Data Source: FY20Q3i MSD - USAID Only,
+            "OHA/SIEI - Data Source: FY20Q3i MSD, Missing data in grey,
             VLC = TX_PVLS / TX_CURR (2 periods prior), Not Covered = 1 - VLC\n",
             toupper({{country}})
         )
@@ -304,11 +307,14 @@ library(extrafont)
     #' @param peds VL for <15
     #' @param caption Add caption to the output?
     #' @param save Save the output to ./Graphics folder
+    #' @param agency Facets indicator by fundingagencies in data frame
+    #' @facet_rows Number of facet rows to use; default is 1
     #' @return ggplot plot of the map
     #'
     map_viralload <- function(spdf, df, vl_variable, cntry,
                               terr_raster, peds = FALSE,
-                              caption = TRUE, save = FALSE) {
+                              caption = TRUE, save = FALSE,
+                              agency = TRUE, facet_rows = 1) {
 
         # Variables
         df_geo <- {{spdf}}
@@ -339,16 +345,22 @@ library(extrafont)
         if (tolower(vl_var) == "vls") {
 
             theme_map <- base_map +
-                geom_sf(data = df_geo2, aes(fill = VLS), lwd = .2, color = grey10k) +
-                scale_fill_viridis_c(
-                    option = "viridis",
-                    alpha = 0.9,
-                    direction = -1,
-                    na.value = grey10k,
-                    breaks = c(0, .25, .50, .75, 1.00),
-                    limits = c(0, 1),
-                    labels = percent
+                geom_sf(data = df_geo2, aes(fill = VLS), lwd = .2, color = grey10k, alpha = 0.8) +
+                scale_fill_stepsn(
+                    breaks = c(0, .8, .9, 1),
+                    guide = guide_colorsteps(even.steps = FALSE),
+                    na.value = grey40k,
+                    limits = c(0,1),
+                    labels = percent,
+                    colors = RColorBrewer::brewer.pal(n = 11, name = "RdYlGn")
                 )
+
+            if (agency == TRUE) {
+
+                 theme_map <- theme_map + facet_wrap(~fundingagency, nrow = facet_rows)
+
+                 }
+
         }
         else if (tolower(vl_var) == "vlc") {
 
@@ -358,24 +370,48 @@ library(extrafont)
                     option = "magma",
                     alpha = 0.9,
                     direction = -1,
-                    na.value = grey10k,
+                    na.value = grey40k,
                     breaks = c(0, .25, .50, .75, 1.00),
                     limits = c(0, 1),
                     labels = percent
                 )
+
+            if (agency == TRUE) {
+
+                theme_map <- theme_map + facet_wrap(~fundingagency, nrow = facet_rows)
+
+            }
         }
+
+
         else {
 
             theme_map <- base_map +
                 geom_sf(data = df_geo2, aes(fill = VLnC), lwd = .2, color = grey10k) +
-                scale_fill_gradient2(
-                    low = "yellow",
-                    high = "brown",
-                    na.value = grey10k,
+                # scale_fill_gradient2(
+                #     low = "yellow",
+                #     high = "brown",
+                #     na.value = grey10k,
+                #     breaks = c(0, .25, .50, .75, 1.00),
+                #     limits = c(0, 1),
+                #     labels = percent
+                # )
+                #
+                scale_fill_viridis_c(
+                    option = "viridis",
+                    alpha = 0.9,
+                    direction = -1,
+                    na.value = grey40k,
                     breaks = c(0, .25, .50, .75, 1.00),
                     limits = c(0, 1),
                     labels = percent
                 )
+
+            if (agency == TRUE) {
+
+                theme_map <- theme_map + facet_wrap(~fundingagency, nrow = facet_rows)
+
+            }
         }
 
         # Add country boundaries and apply map theme
@@ -408,7 +444,9 @@ library(extrafont)
                 legend.key.height = ggplot2::unit(.5, "cm")
             )
 
-        print(theme_map)
+
+            print(theme_map)
+
 
         if(save == TRUE) {
             ggsave(
@@ -429,14 +467,16 @@ library(extrafont)
     #' @param cntry OU Name
     #' @param terr_raster RasterLayer
     #' @param save Save the output to ./Graphics folder
+    #' @param facet_rows Number of facets to include for map sequence
     #' @return ggplot plot of the map
     #'
-    map_viralloads <- function(spdf, df, cntry, terr_raster, save = FALSE) {
+    map_viralloads <- function(spdf, df, cntry, terr_raster, save = FALSE, agency = TRUE, facet_rows = 1) {
 
         df_geo <- {{spdf}}
         df_vl <- {{df}}
         country <- {{cntry}}
         terr <- {{terr_raster}}
+        facets <- facet_rows
 
         # VLS
         m_vls <- map_viralload(spdf = df_geo,
@@ -444,7 +484,9 @@ library(extrafont)
                                vl_variable = "VLS",
                                cntry = country,
                                terr_raster = terr,
-                               caption = FALSE)
+                               caption = FALSE,
+                               agency = TRUE,
+                               facet_rows = facets)
 
         # VLC
         m_vlc <- map_viralload(spdf = spdf_pepfar,
@@ -452,7 +494,9 @@ library(extrafont)
                                vl_variable = "VLC",
                                cntry = country,
                                terr_raster = terr,
-                               caption = FALSE)
+                               caption = FALSE,
+                               agency = TRUE,
+                               facet_rows = facets)
 
         # VLnC
         m_vlnc <- map_viralload(spdf = spdf_pepfar,
@@ -460,10 +504,12 @@ library(extrafont)
                                 vl_variable = "VLnC",
                                 cntry = country,
                                 terr_raster = terr,
-                                caption = FALSE)
+                                caption = FALSE,
+                                agency = TRUE,
+                                facet_rows = facets)
 
         # ALL
-        m_all <- (m_vls + m_vlc + m_vlnc) +
+        m_all <- (m_vlc + m_vlnc + m_vls) +
             plot_layout(widths = c(1,1,1)) +
             plot_annotation(
                 caption = get_caption(country)
@@ -481,7 +527,7 @@ library(extrafont)
     }
 
 
-    #' Map PEDS VL Variables
+    #' Map generic Variables
     #'
     #' @param spdf PEPFAR Spatial Data
     #' @param df wrangled VL data frame
@@ -490,12 +536,13 @@ library(extrafont)
     #' @param save Save the output to ./Graphics folder
     #' @return ggplot plot of the map
     #'
-    map_peds_viralloads <- function(spdf, df, cntry, terr_raster, save = FALSE) {
+    map_peds_viralloads <- function(spdf, df, cntry, terr_raster, save = FALSE, agency = TRUE, facet_rows = 1) {
 
         df_geo <- {{spdf}}
         df_vl <- {{df}}
         country <- {{cntry}}
         terr <- {{terr_raster}}
+        facets <- facet_rows
 
         # VLS
         m_vls <- map_viralload(spdf = df_geo,
@@ -504,7 +551,9 @@ library(extrafont)
                                cntry = country,
                                terr_raster = terr,
                                peds = TRUE,
-                               caption = FALSE)
+                               caption = FALSE,
+                               agency = TRUE,
+                               facet_rows = facets)
 
         # VLC
         m_vlc <- map_viralload(spdf = spdf_pepfar,
@@ -513,7 +562,9 @@ library(extrafont)
                                cntry = country,
                                terr_raster = terr,
                                peds = TRUE,
-                               caption = FALSE)
+                               caption = FALSE,
+                               agency = TRUE,
+                               facet_rows = facets)
 
         # ALL
         m_all <- (m_vlc + m_vls) +
@@ -534,6 +585,233 @@ library(extrafont)
     }
 
 
+
+    #' Map generic variables based on data frame
+    #'
+    #' @param spdf PEPFAR Spatial Data
+    #' @param df wrangled VL data frame
+    #' @param mapvar variable of interest to map
+    #' @param cntry OU Name
+    #' @param terr_raster RasterLayer
+    #' @param save Save the output to ./Graphics folder
+    #' @param facet_rows sets the number of facets for multiple agencies
+    #' @param gen_title returns a generic title directly passed to map
+    #' @param agency if true adds facet wrap to map / owise data are combined
+    #' @return ggplot plot of the map
+    # Map Generic
+
+    map_generic <- function(spdf, df_gen, mapvar, cntry, terr_raster, save = FALSE,
+                            agency = TRUE, facet_rows = 1, gen_title = "", four_parts = TRUE) {
+
+        df_geo <- {{spdf}}
+        df_oth <- {{df_gen}}
+        varname <- df_oth %>% dplyr::select({{mapvar}}) %>% names()
+        country <- {{cntry}}
+        terr <- {{terr_raster}}
+        facets <- facet_rows
+
+
+        # Country boundaries
+        df_geo0 <- df_geo %>% filter(countryname == country, type == "OU")
+
+        # PSNU Geo + VL data
+        df_geo2 <- df_geo %>%
+            filter(countryname == country, type == "PSNU") %>%
+            left_join(df_oth, by = c("uid" = "psnuuid")) %>%
+            filter(!is.na({{mapvar}}))
+
+        # Basemap
+        base_map <- get_basemap(spdf = df_geo, cntry = country, terr_raster = terr)
+
+
+        theme_map <- base_map +
+            geom_sf(data = df_geo2, aes(fill = {{mapvar}}), lwd = .2, color = grey10k, alpha = 0.8)
+
+            if (four_parts == TRUE) {
+
+                 theme_map <-  theme_map +
+                     scale_fill_stepsn(
+                        colors = c("#D73027", "#FC8D59", "#FEE08B",
+                                  "#D9EF8B", "#91CF60", "#1A9850"),
+                        breaks = seq(0, 1, by = 0.25),
+                        guide = guide_colorsteps(show.limits = F,
+                                                 even.steps = F),
+                        na.value = grey40k,
+                        limits = c(0, 1),
+                        labels = percent,
+                        oob = scales::oob_squish,
+                        values = scales::rescale(seq(0, 1, by = 0.25), c(0,1))
+                        #colors = RColorBrewer::brewer.pal(n = 11, name = "RdYlGn")
+                        )
+            }
+
+        else {
+            theme_map <-  theme_map  +
+                scale_fill_viridis_c(
+                    na.value = grey40k,
+                    direction = -1,
+                    option = "viridis",
+                    labels = percent_format(accuracy = 1)
+                    )
+
+        }
+
+
+            # scale_fill_viridis_c(
+            #     option = "viridis",
+            #     #guide = guide_coloursteps(show.limits = TRUE),
+            #     direction = -1,
+            #     na.value = grey40k,
+            #     breaks = c(0, .25, .50, .75, 1.00),
+            #     limits = c(0, 1),
+            #     labels = percent,
+            #     oob = squish
+            # )
+
+        if (agency == TRUE) {
+
+            theme_map <- theme_map + facet_wrap(~fundingagency, nrow = facet_rows)
+        }
+
+        else {
+
+            theme_map <- theme_map
+        }
+
+        # Update legend size and position
+        theme_map <- theme_map +
+            theme(
+                legend.position =  "bottom",
+                legend.direction = "horizontal",
+                legend.key.width = ggplot2::unit(1.5, "cm"),
+                legend.key.height = ggplot2::unit(.5, "cm")
+            ) +
+        labs(title = gen_title)
+
+
+        print(theme_map)
+        return(theme_map)
+
+
+        # Save output
+        if (save == TRUE) {
+            ggsave(here("Graphics", paste0(rep_pd, "_", varname, "_", cntry, "_", Sys.Date(), ".png")),
+                   plot = last_plot(), scale = 1.2, dpi = 400, width = 10, height = 7, units = "in")
+        }
+
+    }
+
+
+    # Map VL + EID Coverage combined
+
+    #' @param spdf PEPFAR Spatial Data
+    #' @param df wrangled VL data frame
+    #' @param cntry OU Name
+    #' @param vl_variable which viral load variable to use
+    #' @param terr_raster RasterLayer
+    #' @param save_all saves all outputs to a new file w/ OU name in title
+    #' @param facet_rows how many facets to use
+    #' @param df2 wrangled generic data frame to be combined with VL data
+    #' @param mapvar name of variable from wrangled dataframe to use in maps/titles
+    #' @param save Save the output to ./Graphics folder
+    #' @param facet_rows Number of facets to include for map sequence
+
+
+    # step 1 - retrieve viral load map
+    map_vlc_eid <- function(spdf, df, cntry, vl_variable, terr_raster,
+                            save_all = T,
+                            facet_rows = 2, df2, mapvar) {
+
+        df_geo <- {{spdf}}
+        df_vl <- {{df}}
+        vl_var <- {{vl_variable}}
+        country <- {{cntry}}
+        df_oth <- {{df2}}
+        terr <- {{terr_raster}}
+        varname <- df_oth %>% dplyr::select({{mapvar}}) %>% names()
+        facets <- facet_rows
+
+        vlc <- map_viralload(spdf = spdf_pepfar,
+                             df = df_vl,
+                             peds = TRUE,
+                             vl_variable = vl_var,
+                             cntry = country,
+                             terr_raster = terr,
+                             agency = T,
+                             facet_rows = facets,
+                             caption = FALSE)
+
+        # step 2 - retrieve EID coverage map
+        eid <- map_generic(spdf = spdf_pepfar,
+                           df_gen = df_oth,
+                           mapvar = {{mapvar}},
+                           cntry = country,
+                           terr_raster = terr,
+                           agency = T,
+                           facet_rows = facets,
+                           gen_title = "Early Infant Diagnosis Under Two")
+
+        m_all <- (vlc + eid) +
+            plot_layout(widths = c(1,1)) +
+            plot_annotation(
+                caption = paste0("OHA/SIEI - Data Source: MSD ", rep_pd, "_", cntry, "_VLC + EID \n",
+                                 "Produced on ", Sys.Date(), ", Missing data shown in gray."),
+                title = paste0(str_to_upper(country), " VLC & EID PROXY COVERAGE SUMMARY")
+            )
+
+
+        print(m_all)
+
+        if (save_all == TRUE) {
+            ggsave(here("Graphics", get_output_name(cntry, var = "VL_EID_Coverage")),
+                   plot = last_plot(), scale = 1.2, dpi = 400, width = 10, height = 7, units = "in")
+        }
+
+    }
+
+
+    # Create a bar graph for TX_ML_PLP
+    tx_graph <- function(spdf, df_gph, mapvar, cntry) {
+
+        df_geo <- {{spdf}}
+        df <- {{df_gph}}
+        country <- {{cntry}}
+
+
+        df_geo2 <- df_geo %>%
+            filter(countryname == country, type == "PSNU") %>%
+            left_join(df, by = c("uid" = "psnuuid")) %>%
+            filter(!is.na({{mapvar}})) %>%
+            mutate(psnu_short = case_when(
+                str_detect(psnu.y, " County$") ~  str_replace_all(psnu.y, " County$", ""),
+                str_detect(psnu.y, " District$") ~  str_replace_all(psnu.y, " District$", ""),
+                TRUE ~ psnu.y)
+            )
+
+
+      p <-   df_geo2 %>%
+            mutate(yorder = tidytext::reorder_within(psnu_short, {{mapvar}}, fundingagency),
+                   rank = percent_rank({{mapvar}})) %>%
+            ggplot(aes(y = {{mapvar}}, x = yorder)) +
+            geom_col(aes(fill = {{mapvar}})) +#aes(fill = if_else(rank > 0.75, grey60k, grey30k))) +
+            facet_wrap(~paste0(fundingagency, "\n"), nrow = 2, scales = "free_y") +
+            coord_flip() +
+            scale_x_reordered() +
+            #scale_fill_identity() +
+            scale_fill_viridis_c(option = "viridis", direction = -1) +
+            scale_y_continuous(labels = percent_format(accuracy = 1)) +
+            si_style_xgrid() +
+            labs(x = NULL, y = NULL) +
+            theme(legend.position = "none",
+                  axis.title.y = element_text(margin = margin(t = 0, r = -20)))
+
+      return(p)
+    }
+
+
+
+
+
 # DATA --------------------------------------------------------------
 
     ## File path + name
@@ -542,7 +820,8 @@ library(extrafont)
             pattern = psnu_im,
             recursive = TRUE,
             full.names = TRUE
-        )
+        ) %>%
+        last()
 
     ## MER PSNU Data
     df_psnu <- vroom(file_psnu_im)
@@ -568,8 +847,11 @@ library(extrafont)
     ## PSNU
     df_psnus <- df_psnu %>%
         dplyr::select(operatingunit, operatingunituid, countryname, snu1, snu1uid, psnu, psnuuid) %>%
-        distinct(operatingunit, countryname, snu1, snu1uid, psnu, psnuuid) %>% View()
+        distinct(operatingunit, countryname, snu1, snu1uid, psnu, psnuuid) %>%
         arrange(operatingunit, countryname, snu1, psnu)
+
+    df_psnus %>% View()
+
 
 
     ## List of Distinct Orgs
@@ -595,12 +877,13 @@ library(extrafont)
     ## Filter & Summarize
     df_vl <- df_psnu %>%
         filter(fiscal_year == rep_fy,
-               fundingagency == rep_agency,
+               fundingagency %in% rep_agency,
                indicator %in% c("TX_PVLS","TX_CURR"),
                standardizeddisaggregate %in% c("Total Numerator","Total Denominator"),
                operatingunituid %in% lst_ouuid) %>%
-        mutate(indicator = ifelse(numeratordenom == "D", paste0(indicator, "_D"), indicator)) %>%
-        group_by(fiscal_year, operatingunit, psnuuid, psnu, indicator) %>%
+        mutate(indicator = ifelse(numeratordenom == "D", paste0(indicator, "_D"), indicator),
+               fundingagency = if_else(fundingagency == "HHS/CDC", "CDC", fundingagency)) %>%
+        group_by(fiscal_year, operatingunit, psnuuid, psnu, indicator, fundingagency) %>%
         summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
         ungroup() %>%
         reshape_msd(clean = TRUE) %>%
@@ -610,7 +893,7 @@ library(extrafont)
 
     ## Calculate VL Stats
     df_vl <- df_vl %>%
-        group_by(operatingunit, psnuuid, psnu) %>%
+        group_by(operatingunit, psnuuid, psnu, fundingagency) %>%
         mutate(VLC = TX_PVLS_D / lag(TX_CURR, 2, order_by = period)) %>%
         ungroup() %>%
         filter(period == rep_pd) %>%
@@ -641,18 +924,19 @@ library(extrafont)
     ## VL PEDs
     df_vl_u15 <- df_psnu %>%
         filter(fiscal_year == rep_fy,
-               fundingagency == rep_agency,
+               fundingagency %in% rep_agency,
                indicator %in% c("TX_PVLS","TX_CURR"),
                standardizeddisaggregate %in% c("Age/Sex/HIVStatus","Age/Sex/Indication/HIVStatus"),
                operatingunituid %in% lst_ouuid) %>%
-        mutate(indicator = ifelse(numeratordenom == "D", paste0(indicator, "_D"), indicator)) %>%
-        group_by(fiscal_year, operatingunit, psnuuid, psnu, trendscoarse, indicator) %>%
+        mutate(indicator = ifelse(numeratordenom == "D", paste0(indicator, "_D"), indicator),
+               fundingagency = if_else(fundingagency == "HHS/CDC", "CDC", fundingagency)) %>%
+        group_by(fiscal_year, operatingunit, psnuuid, psnu, trendscoarse, indicator, fundingagency) %>%
         summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
         ungroup() %>%
         reshape_msd(clean = TRUE) %>%
         dplyr::select(-period_type) %>%
         spread(indicator, val) %>%
-        group_by(operatingunit, psnuuid, psnu, trendscoarse) %>%
+        group_by(operatingunit, psnuuid, psnu, trendscoarse, fundingagency) %>%
         mutate(VLC = TX_PVLS_D / lag(TX_CURR, 2, order_by = period)) %>%
         ungroup() %>%
         filter(period == rep_pd, trendscoarse == "<15") %>%
@@ -679,6 +963,91 @@ library(extrafont)
             )
         )
 
+
+    #PEDs - EID
+    df_eid <- df_psnu %>%
+        filter(fiscal_year == rep_fy,
+               fundingagency %in% rep_agency,
+               indicator %in% c("PMTCT_EID_Less_Equal_Two_Months", "PMTCT_EID"),
+               operatingunituid %in% lst_ouuid) %>%
+        mutate(indicator = ifelse(numeratordenom == "D", paste0(indicator, "_D"), indicator),
+               fundingagency = if_else(fundingagency == "HHS/CDC", "CDC", fundingagency)) %>%
+        filter(indicator != "PMTCT_EID") %>%
+        group_by(fiscal_year, operatingunit, psnuuid, psnu, indicator, fundingagency) %>%
+        summarise(across(starts_with("cumulative"), sum, na.rm = TRUE)) %>%
+        ungroup() %>%
+        reshape_msd(clean = TRUE) %>%
+        dplyr::select(-period_type) %>%
+        spread(indicator, val) %>%
+        mutate(eid_cov_under2 = (PMTCT_EID_Less_Equal_Two_Months / PMTCT_EID_D))
+
+
+    # TX_ML -- aggregate bad events then divide by TX_CURR_lagged_1
+    # Numerator: Number of patients not retained on ART (LTFU, Died, Stopped)
+    # Denominator: TX_CURR_lag1 + TX_NEW_curr + TX_RTT
+
+       df_tx_ml <-
+           df_psnu %>%
+           filter(
+               fiscal_year == rep_fy,
+               fundingagency %in% c("USAID", "HHS/CDC"),
+               indicator %in% c("TX_ML"),
+               standardizeddisaggregate %in% c("Age/Sex/ARTNoContactReason/HIVStatus"),
+               operatingunituid %in% lst_ouuid,
+               typemilitary == 'N',
+           ) %>%
+       mutate(
+           fundingagency = if_else(fundingagency == "HHS/CDC", "CDC", fundingagency),
+           otherdisaggregate = str_remove(otherdisaggregate, "No Contact Outcome - "),
+           tx_badevents = case_when(
+               otherdisaggregate %in% c("Died", "Lost to Follow-Up <3 Months Treatment",
+                     "Lost to Follow-Up 3+ Months Treatment",
+                     "Refused Stopped Treatment") ~ "Bad events",
+               TRUE ~ NA_character_)
+           ) %>%
+           filter(!is.na(tx_badevents) & indicator == "TX_ML") %>%
+      group_by(operatingunit, snu1, snu1uid, psnu, psnuuid, indicator, tx_badevents, fundingagency) %>%
+           summarize_at(vars(targets:cumulative), sum, na.rm = TRUE) %>%
+           ungroup() %>%
+           dplyr::select(-(targets:qtr4), TX_ML_bad = cumulative, -indicator, -tx_badevents)
+
+
+     df_tx <-
+         df_psnu %>%
+         filter(
+             fiscal_year == rep_fy,
+             fundingagency %in% c("USAID", "HHS/CDC"),
+             indicator %in% c("TX_CURR", "TX_NEW", "TX_RTT"),
+             standardizeddisaggregate %in% c("Total Numerator")
+         ) %>%
+         mutate(
+             fundingagency = if_else(fundingagency == "HHS/CDC", "CDC", fundingagency),
+             operatingunituid %in% lst_ouuid
+         ) %>%
+         group_by(fiscal_year, operatingunit, psnuuid, psnu,indicator, fundingagency) %>%
+         summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
+         ungroup() %>%
+        reshape_msd() %>%
+         filter(str_detect(period, "q2|q3")) %>%
+         filter(period == "fy2020q3" | (period == "fy2020q2" & indicator == "TX_CURR")) %>%
+         mutate(period = case_when(
+             period == "fy2020q2" ~ "Q2",
+             period == "fy2020q3" ~ "Q3"
+         )) %>%
+         pivot_wider(names_from = c(indicator, period), values_from = val) %>%
+         rowwise() %>%
+         mutate(TX_BADEVENTS_DENOM = sum(TX_CURR_Q2, TX_NEW_Q3, TX_RTT_Q3, na.rm = T))
+
+     df_tx_bad <-
+         df_tx %>%
+          left_join(df_tx_ml, by = c("operatingunit", "psnuuid", "psnu", "fundingagency")) %>%
+         mutate(TX_ML_PLP = round((TX_ML_bad / TX_BADEVENTS_DENOM), digits = 3))
+
+      # Test calculations/results
+      df_tx_bad %>%
+          filter(operatingunit == "Zambia") %>%
+          group_by(psnu) %>%
+          summarise(sum = (TX_ML_PLP))
 
     ## PEPFAR OU/Countries
 
@@ -817,18 +1186,22 @@ library(extrafont)
     cname <- "Ukraine" # Nah
     cname <- "Lesotho"
     cname <- "Zambia"
+    cname <- "Botswana"
 
     map_viralload(spdf = spdf_pepfar,
                   df = df_vl,
                   vl_variable = "VLS",
                   cntry = cname,
-                  terr_raster = terr)
+                  terr_raster = terr,
+                  agency = TRUE,
+                  facet_rows = 2)
 
     map_viralload(spdf = spdf_pepfar,
                   df = df_vl,
                   vl_variable = "VLC",
                   cntry = cname,
-                  terr_raster = terr)
+                  terr_raster = terr,
+                  agency = T)
 
     map_viralload(spdf = spdf_pepfar,
                   df = df_vl,
@@ -839,26 +1212,83 @@ library(extrafont)
     map_viralloads(spdf = spdf_pepfar,
                    df = df_vl,
                    cntry = cname,
-                   terr_raster = terr)
+                   terr_raster = terr,
+                   facet_rows = 2)
 
     # PEDS Test
     map_peds_viralloads(spdf = spdf_pepfar,
                    df = df_vl_u15,
                    cntry = cname,
-                   terr_raster = terr)
+                   terr_raster = terr,
+                   agency = T,
+                   facet_rows = 2,
+                   save = TRUE)
+
+    # Generic Test
+
+    map_generic(spdf = spdf_pepfar,
+                df = df_eid,
+                mapvar = eid_cov_under2,
+                cntry = cname,
+                terr_raster = terr,
+                agency = T,
+                facet_rows = 2,
+                save = TRUE,
+                four_parts = F)
+
+
+    # Test VLc + EID combined
+    map_vlc_eid(spdf = spdf_pepfar,
+                df = df_vl_u15,
+                vl_variable = "VLC",
+                cntry = cname,
+                terr_raster = terr,
+                df2 = df_eid,
+                mapvar = eid_cov_under2,
+                save_all = T)
+
+    # Test TX_ML_PLP map
+    map_generic(spdf = spdf_pepfar,
+                df = df_tx_bad,
+                mapvar = TX_ML_PLP,
+                cntry = cname,
+                terr_raster = terr,
+                agency = T,
+                facet_rows = 2,
+                save = TRUE,
+                four_parts = F)
+
+
+
+
+
+
+
+
+    # Dot plot / bar graph to go with map
+    tx_graph(spdf_pepfar, df_tx_bad, TX_ML_PLP, "Kenya")
+
+
+
+
+# BATCH VIZ ---------------------------------------------------------------
 
 
     ## Batch mapping
+    #df_vl_usaid <- df_vl %>% filter(fundingagency == "USAID")
 
     map_ous <- df_vl %>%
-        filter(!str_detect(operatingunit, " Region$"), operatingunit != "South Africa") %>%
+        filter(!str_detect(operatingunit, " Region$"), !operatingunit %in% c("none")) %>%
         distinct(operatingunit) %>%
         pull()
 
+
+
     ## VLS
     map_ous %>%
+        nth(2) %>%
         map(.x, .f = ~map_viralload(spdf = spdf_pepfar,
-                                    df = df_vl,
+                                    df = df_vl_usaid ,
                                     vl_variable = "VLS",
                                     cntry = .x,
                                     terr_raster = terr,
@@ -867,7 +1297,7 @@ library(extrafont)
     ## VLC
     map_ous %>%
         map(.x, .f = ~map_viralload(spdf = spdf_pepfar,
-                                    df = df_vl,
+                                    df = df_vl_usaid,
                                     vl_variable = "VLC",
                                     cntry = .x,
                                     terr_raster = terr,
@@ -875,8 +1305,9 @@ library(extrafont)
 
     ## VLnC
     map_ous %>%
+        nth(11) %>%
         map(.x, .f = ~map_viralload(spdf = spdf_pepfar,
-                                    df = df_vl,
+                                    df = df_vl_usaid,
                                     vl_variable = "VLnC",
                                     cntry = .x,
                                     terr_raster = terr,
@@ -889,7 +1320,9 @@ library(extrafont)
                                      df = df_vl,
                                      cntry = .x,
                                      terr_raster = terr,
-                                     save = TRUE))
+                                     save = TRUE,
+                                     agency = TRUE,
+                                     facet_rows = 2))
 
     ## PEDS ALL
     map_ous %>%
@@ -900,5 +1333,72 @@ library(extrafont)
                                      save = TRUE))
 
 
+    ## VL + EID Coverage
+    map_ous <- df_eid %>%
+        filter(!str_detect(operatingunit, " Region$"), !operatingunit %in% c("none")) %>%
+        distinct(operatingunit) %>%
+        pull()
+
+
+   # Batch
+   map_ous %>%
+       nth(13) %>%
+       map(.x, .f = ~map_vlc_eid(spdf = spdf_pepfar,
+                                 df = df_vl_u15,
+                                 vl_variable = "VLC",
+                                 cntry = .x,
+                                 terr_raster = terr,
+                                 df2 = df_eid,
+                                 mapvar = eid_cov_under2,
+                                 save_all = T))
+
+
+
+   # Batch Patient Loss Proxy Maps + graphs
+
+
+   tx_batch <- function(cname, save = F) {
+
+    country <- {{cname}}
+     p1 <-   map_generic(spdf = spdf_pepfar,
+                   df = df_tx_bad,
+                   mapvar = TX_ML_PLP,
+                   cntry = country,
+                   terr_raster = terr,
+                   agency = T,
+                   facet_rows = 2,
+                   save = TRUE,
+                   four_parts = F)
+
+    p2 <- tx_graph(spdf = spdf_pepfar, df_gph = df_tx_bad, mapvar = TX_ML_PLP, cntry = country )
+
+    (p1 + p2) +
+        plot_layout(widths = c(1,1)) +
+        plot_annotation(
+            caption = paste0("OHA/SIEI - Data Source: MSD ", rep_pd, "_", country, "TX_ML Patient Loss Proxy \n",
+                             "TX_ML_PLP = Number not retained on ART (LTFU, Died, Stopped) / (TX_CURR_prev + TX_NEW + TX_RTT) \n",
+                             "Produced on ", Sys.Date(), ", Missing data shown in gray on map."),
+            title = paste0(str_to_upper(country), " TX_ML Patient Loss Proxy")
+        )
+
+    if (save == TRUE) {
+      ggsave(here("Graphics", paste0(rep_pd, "_", "TX_ML_PLP_", country, "_", Sys.Date(), ".png")),
+             plot = last_plot(), scale = 1.2, dpi = 400, width = 10, height = 7, units = "in")
+    }
+
+   }
+
+    tx_batch(cname = "Nigeria", save = TRUE)
+
+
+
+
+
+
+
+
 ## END ##
+
+
+
 
