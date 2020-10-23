@@ -193,6 +193,7 @@ df_psnu <- vroom(file_psnu_im)
 
 df_psnu %>% glimpse()
 
+
 ## OUs
 df_ous <- df_psnu %>%
   distinct(operatingunit, operatingunituid) %>%
@@ -243,115 +244,136 @@ lst_snu1uid <- df_snus %>%
 lst_ouuid <- df_ous %>%
   pull(operatingunituid)
 
+
 ## MER Data Munging
 
 ## Filter & Summarize
-df_vl <- df_psnu %>%
-  filter(
-    fiscal_year == rep_fy,
-    fundingagency %in% rep_agency,
-    indicator %in% c("TX_PVLS", "TX_CURR"),
-    standardizeddisaggregate %in% c("Total Numerator", "Total Denominator"),
-    operatingunituid %in% lst_ouuid
-  ) %>%
-  mutate(
-    indicator = if_else(numeratordenom == "D", paste0(indicator, "_D"), indicator),
-    fundingagency = if_else(fundingagency == "HHS/CDC", "CDC", fundingagency)
-  ) %>%
-  group_by(fiscal_year,
-           operatingunit,
-           psnuuid,
-           psnu,
-           indicator,
-           fundingagency) %>%
-  summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
-  ungroup() %>%
-  reshape_msd(clean = TRUE) %>%
-  dplyr::select(-period_type) %>%
-  spread(indicator, val)
+
+df_vl <- extract_viralload(df_msd = df_psnu,
+                           rep_agency = rep_agency,
+                           rep_fy = rep_fy,
+                           lst_ous = lst_ouuid)
+
+df_vl %>% glimpse()
 
 
-## Calculate VL Stats
-df_vl <- df_vl %>%
-  group_by(operatingunit, psnuuid, psnu, fundingagency) %>%
-  mutate(VLC = TX_PVLS_D / lag(TX_CURR, 2, order_by = period)) %>%
-  ungroup() %>%
-  filter(period == rep_pd) %>%
-  mutate(
-    VLS = (TX_PVLS / TX_PVLS_D) * VLC,
-    VLnC = case_when(
-      VLC > 1 ~ 0,
-      TRUE ~ 1 - VLC
-    ),
-    ou_label = paste0(
-      operatingunit,
-      " (",
-      lag(TX_CURR, 2, order_by = period) %>% comma(accuracy = 1),
-      ")"
-    ),
-    psnu_short = case_when(
-      str_detect(psnu, " County$") ~  str_remove(psnu, " County$"),
-      str_detect(psnu, " District$") ~  str_remove(psnu, " District$"),
-      TRUE ~ psnu
-    ),
-    psnu_label = case_when(
-      VLnC > .7 ~ psnu_short,
-      TRUE ~ ""
-    )
-  )
+# # VL
+# df_vl <- df_psnu %>%
+#   filter(
+#     fiscal_year == rep_fy,
+#     fundingagency %in% rep_agency,
+#     indicator %in% c("TX_PVLS", "TX_CURR"),
+#     standardizeddisaggregate %in% c("Total Numerator", "Total Denominator"),
+#     operatingunituid %in% lst_ouuid
+#   ) %>%
+#   mutate(
+#     indicator = if_else(numeratordenom == "D", paste0(indicator, "_D"), indicator),
+#     fundingagency = if_else(fundingagency == "HHS/CDC", "CDC", fundingagency)
+#   ) %>%
+#   group_by(fiscal_year,
+#            operatingunit,
+#            psnuuid,
+#            psnu,
+#            indicator,
+#            fundingagency) %>%
+#   summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
+#   ungroup() %>%
+#   reshape_msd(clean = TRUE) %>%
+#   dplyr::select(-period_type) %>%
+#   spread(indicator, val)
+#
+#
+# ## Calculate VL Stats
+# df_vl <- df_vl %>%
+#   group_by(operatingunit, psnuuid, psnu, fundingagency) %>%
+#   mutate(VLC = TX_PVLS_D / lag(TX_CURR, 2, order_by = period)) %>%
+#   ungroup() %>%
+#   filter(period == rep_pd) %>%
+#   mutate(
+#     VLS = (TX_PVLS / TX_PVLS_D) * VLC,
+#     VLnC = case_when(
+#       VLC > 1 ~ 0,
+#       TRUE ~ 1 - VLC
+#     ),
+#     ou_label = paste0(
+#       operatingunit,
+#       " (",
+#       lag(TX_CURR, 2, order_by = period) %>% comma(accuracy = 1),
+#       ")"
+#     ),
+#     psnu_short = case_when(
+#       str_detect(psnu, " County$") ~  str_remove(psnu, " County$"),
+#       str_detect(psnu, " District$") ~  str_remove(psnu, " District$"),
+#       TRUE ~ psnu
+#     ),
+#     psnu_label = case_when(
+#       VLnC > .7 ~ psnu_short,
+#       TRUE ~ ""
+#     )
+#   )
 
 
 ## VL PEDs
-df_vl_u15 <- df_psnu %>%
-  filter(
-    fiscal_year == rep_fy,
-    fundingagency %in% rep_agency,
-    indicator %in% c("TX_PVLS", "TX_CURR"),
-    standardizeddisaggregate %in% c("Age/Sex/HIVStatus", "Age/Sex/Indication/HIVStatus"),
-    operatingunituid %in% lst_ouuid
-  ) %>%
-  mutate(
-    indicator = if_else(numeratordenom == "D", paste0(indicator, "_D"), indicator),
-    fundingagency = if_else(fundingagency == "HHS/CDC", "CDC", fundingagency)
-  ) %>%
-  group_by(fiscal_year,
-           operatingunit,
-           psnuuid,
-           psnu,
-           trendscoarse,
-           indicator,
-           fundingagency) %>%
-  summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
-  ungroup() %>%
-  reshape_msd(clean = TRUE) %>%
-  dplyr::select(-period_type) %>%
-  spread(indicator, val) %>%
-  group_by(operatingunit, psnuuid, psnu, trendscoarse, fundingagency) %>%
-  mutate(VLC = TX_PVLS_D / lag(TX_CURR, 2, order_by = period)) %>%
-  ungroup() %>%
-  filter(period == rep_pd, trendscoarse == "<15") %>%
-  mutate(
-    VLS = (TX_PVLS / TX_PVLS_D) * VLC,
-    VLnC = case_when(
-      VLC > 1 ~ 0,
-      TRUE ~ 1 - VLC
-    ),
-    ou_label = paste0(
-      operatingunit,
-      " (",
-      lag(TX_CURR, 2, order_by = period) %>% comma(accuracy = 1),
-      ")"
-    ),
-    psnu_short = case_when(
-      str_detect(psnu, " County$") ~  str_remove(psnu, " County$"),
-      str_detect(psnu, " District$") ~  str_remove(psnu, " District$"),
-      TRUE ~ psnu
-    ),
-    psnu_label = case_when(
-      VLnC > .7 ~ psnu_short,
-      TRUE ~ ""
-    )
-  )
+
+df_vl_u15 <- extract_viralload(df_msd = df_psnu,
+                               rep_agency = rep_agency,
+                               rep_fy = rep_fy,
+                               peds = TRUE,
+                               lst_ous = lst_ouuid)
+
+df_vl_u15 %>% glimpse()
+
+
+# df_vl_u15 <- df_psnu %>%
+#   filter(
+#     fiscal_year == rep_fy,
+#     fundingagency %in% rep_agency,
+#     indicator %in% c("TX_PVLS", "TX_CURR"),
+#     standardizeddisaggregate %in% c("Age/Sex/HIVStatus", "Age/Sex/Indication/HIVStatus"),
+#     operatingunituid %in% lst_ouuid
+#   ) %>%
+#   mutate(
+#     indicator = if_else(numeratordenom == "D", paste0(indicator, "_D"), indicator),
+#     fundingagency = if_else(fundingagency == "HHS/CDC", "CDC", fundingagency)
+#   ) %>%
+#   group_by(fiscal_year,
+#            operatingunit,
+#            psnuuid,
+#            psnu,
+#            trendscoarse,
+#            indicator,
+#            fundingagency) %>%
+#   summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
+#   ungroup() %>%
+#   reshape_msd(clean = TRUE) %>%
+#   dplyr::select(-period_type) %>%
+#   spread(indicator, val) %>%
+#   group_by(operatingunit, psnuuid, psnu, trendscoarse, fundingagency) %>%
+#   mutate(VLC = TX_PVLS_D / lag(TX_CURR, 2, order_by = period)) %>%
+#   ungroup() %>%
+#   filter(period == rep_pd, trendscoarse == "<15") %>%
+#   mutate(
+#     VLS = (TX_PVLS / TX_PVLS_D) * VLC,
+#     VLnC = case_when(
+#       VLC > 1 ~ 0,
+#       TRUE ~ 1 - VLC
+#     ),
+#     ou_label = paste0(
+#       operatingunit,
+#       " (",
+#       lag(TX_CURR, 2, order_by = period) %>% comma(accuracy = 1),
+#       ")"
+#     ),
+#     psnu_short = case_when(
+#       str_detect(psnu, " County$") ~  str_remove(psnu, " County$"),
+#       str_detect(psnu, " District$") ~  str_remove(psnu, " District$"),
+#       TRUE ~ psnu
+#     ),
+#     psnu_label = case_when(
+#       VLnC > .7 ~ psnu_short,
+#       TRUE ~ ""
+#     )
+#   )
 
 
 #PEDs - EID
@@ -476,58 +498,69 @@ ous <-
 ## Terrain Raster
 terr <- get_raster(terr_path = dir_terr)
 
-## ORGs
-spdf_pepfar <- list.files(
-    path = dir_geo,
-    pattern = "VcPepfarPolygons.shp",
-    recursive = T,
-    full.names = T
-  ) %>%
-  read_sf()
+## GEO
+build_spdf()
 
+build_spdf(name = "sample.shp")
 
-## Geo - identify ous
-spdf_pepfar <- spdf_pepfar %>%
-  left_join(ous, by = "uid")
+spdf_pepfar <- build_spdf(df_psnu = df_psnu)
 
-## Geo - identify snu1
-spdf_pepfar <- spdf_pepfar %>%
-  left_join(df_snus, by = c("uid" = "snu1uid")) %>%
-  rename(countryname = countryname.x) %>%
-  mutate(
-    type = case_when(is.na(type) & !is.na(operatingunit) ~ "SNU1",
-                     TRUE ~ type),
-    countryname = case_when(
-      is.na(countryname) & type == "SNU1" ~ countryname.y,
-      TRUE ~ countryname
-    )
-  ) %>%
-  dplyr::select(-countryname.y)
+spdf_pepfar %>%
+  st_set_geometry(NULL) %>%
+  prinf()
 
-## Geo - identify psnu
-spdf_pepfar <- spdf_pepfar %>%
-  left_join(df_psnus, by = c("uid" = "psnuuid")) %>%
-  rename(countryname = countryname.x,
-         operatingunit = operatingunit.x,
-         snu1 = snu1.x) %>%
-  mutate(
-    type = case_when(is.na(type) & !is.na(operatingunit.y) ~ "PSNU",
-                     TRUE ~ type),
-    countryname = case_when(
-      is.na(countryname) & type == "PSNU" ~ countryname.y,
-      TRUE ~ countryname
-    ),
-    operatingunit = case_when(
-      is.na(operatingunit) & type == "PSNU" ~ operatingunit.y,
-      TRUE ~ operatingunit
-    ),
-    snu1 = case_when(is.na(snu1) & type == "PSNU" ~ snu1.y,
-                     TRUE ~ snu1),
-    type = case_when(!is.na(snu1uid) &
-                       uid == snu1uid & type == "SNU1" ~ "PSNU",
-                     TRUE ~ type)
-  ) %>%
-  dplyr::select(-ends_with(".y"))
+# ## ORGs
+# spdf_pepfar <- list.files(
+#     path = dir_geo,
+#     pattern = "VcPepfarPolygons.shp",
+#     recursive = T,
+#     full.names = T
+#   ) %>%
+#   read_sf()
+#
+#
+# ## Geo - identify ous
+# spdf_pepfar <- spdf_pepfar %>%
+#   left_join(ous, by = "uid")
+#
+# ## Geo - identify snu1
+# spdf_pepfar <- spdf_pepfar %>%
+#   left_join(df_snus, by = c("uid" = "snu1uid")) %>%
+#   rename(countryname = countryname.x) %>%
+#   mutate(
+#     type = case_when(is.na(type) & !is.na(operatingunit) ~ "SNU1",
+#                      TRUE ~ type),
+#     countryname = case_when(
+#       is.na(countryname) & type == "SNU1" ~ countryname.y,
+#       TRUE ~ countryname
+#     )
+#   ) %>%
+#   dplyr::select(-countryname.y)
+#
+# ## Geo - identify psnu
+# spdf_pepfar <- spdf_pepfar %>%
+#   left_join(df_psnus, by = c("uid" = "psnuuid")) %>%
+#   rename(countryname = countryname.x,
+#          operatingunit = operatingunit.x,
+#          snu1 = snu1.x) %>%
+#   mutate(
+#     type = case_when(is.na(type) & !is.na(operatingunit.y) ~ "PSNU",
+#                      TRUE ~ type),
+#     countryname = case_when(
+#       is.na(countryname) & type == "PSNU" ~ countryname.y,
+#       TRUE ~ countryname
+#     ),
+#     operatingunit = case_when(
+#       is.na(operatingunit) & type == "PSNU" ~ operatingunit.y,
+#       TRUE ~ operatingunit
+#     ),
+#     snu1 = case_when(is.na(snu1) & type == "PSNU" ~ snu1.y,
+#                      TRUE ~ snu1),
+#     type = case_when(!is.na(snu1uid) &
+#                        uid == snu1uid & type == "SNU1" ~ "PSNU",
+#                      TRUE ~ type)
+#   ) %>%
+#   dplyr::select(-ends_with(".y"))
 
 
 # VIZ --------------------------------------
@@ -574,25 +607,13 @@ spdf_pepfar %>%
   first() %>%
   map(.x, .f = ~ map_org(spdf_pepfar, org_uid = .x, title = .x))
 
-spdf_pepfar %>%
-  st_set_geometry(NULL) %>%
-  filter(type == "OU") %>%
-  pull(uid) %>%
-  last() %>%
-  map(.x,
-      .f = ~ map_org(
-        spdf_pepfar,
-        org_uid = .x,
-        title = spdf_pepfar %>%
-          filter(uid == .x) %>% pull(countryname)
-      ))
 
 
 ## Individual country basemaps => Ressource Intensive
 spdf_pepfar %>%
   st_set_geometry(NULL) %>%
   filter(type == "OU") %>%
-  pull(countryname) %>%
+  pull(operatingunit) %>%
   nth(8) %>%                  # This is test for Cote d'Ivoire
   map(.x,
       .f = ~ get_basemap(

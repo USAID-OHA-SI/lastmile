@@ -6,29 +6,193 @@
 ##  DATE:    2020-10-21
 
 
-#' VL Datasets
+#' @title Viral Load Datasets
 #'
 #' @param df_msd
-#' @param lst_ou
+#' @param rep_agency
+#' @param rep_fy
+#' @param rep_pd
+#' @param peds
+#' @param lst_ous
 #' @return VL Datasets
 #'
 extract_viralload <-
   function(df_msd,
-           lst_ou = NULL) {
+           rep_agency = "USAID",
+           rep_fy = 2020,
+           rep_pd = 3,
+           peds = FALSE,
+           lst_ous = NULL) {
 
+    # Variables
+    df <- {{df_msd}}
+    agencies <- {{rep_agency}}
+    fy <- {{rep_fy}}
+
+    pd <- {{rep_pd}}
+    pd <- paste0("FY", str_sub(as.character(fy), 3, 4), "Q", pd)
+
+    peds <- {{peds}}
+    ous <- {{lst_ous}}
+
+
+    # Filter Indicators and
+    df_vl <- df %>%
+      filter(
+        fiscal_year == fy,
+        fundingagency %in% agencies,
+        indicator %in% c("TX_PVLS", "TX_CURR")
+    )
+
+    # Target ous
+    if (!is.null(ous)) {
+      df_vl <- df_vl %>%
+        filter(operatingunituid %in% ous)
+    }
+
+    # Peds option
+    if (isTRUE(peds)) {
+
+      df_peds <- extract_peds_viralload(df_msd = df_vl, rep_qtr = pd)
+
+      return(df_peds)
+    }
+
+    # Proceed with the filter, only if peds = FALSE
+    df_vl <- df_vl %>%
+      filter(
+        standardizeddisaggregate %in% c("Total Numerator", "Total Denominator")
+      ) %>%
+      mutate(
+        indicator = if_else(
+          numeratordenom == "D",
+          paste0(indicator, "_D"),
+          indicator
+        ),
+        fundingagency = if_else(
+          fundingagency == "HHS/CDC",
+          "CDC",
+          fundingagency
+        )
+      ) %>%
+      group_by(fiscal_year,
+               operatingunit,
+               psnuuid,
+               psnu,
+               indicator,
+               fundingagency) %>%
+      summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
+      ungroup() %>%
+      reshape_msd(clean = TRUE) %>%
+      dplyr::select(-period_type) %>%
+      spread(indicator, val)
+
+
+    # Calculate VL Stats
+    df_vl <- df_vl %>%
+      group_by(operatingunit, psnuuid, psnu, fundingagency) %>%
+      mutate(VLC = TX_PVLS_D / lag(TX_CURR, 2, order_by = period)) %>%
+      ungroup() %>%
+      filter(period == pd) %>%
+      mutate(
+        VLS = (TX_PVLS / TX_PVLS_D) * VLC,
+        VLnC = case_when(
+          VLC > 1 ~ 0,
+          TRUE ~ 1 - VLC
+        ),
+        ou_label = paste0(
+          operatingunit,
+          " (",
+          lag(TX_CURR, 2, order_by = period) %>% comma(accuracy = 1),
+          ")"
+        ),
+        psnu_short = case_when(
+          str_detect(psnu, " County$") ~  str_remove(psnu, " County$"),
+          str_detect(psnu, " District$") ~  str_remove(psnu, " District$"),
+          TRUE ~ psnu
+        ),
+        psnu_label = case_when(
+          VLnC > .7 ~ psnu_short,
+          TRUE ~ ""
+        )
+      )
+
+    return(df_vl)
   }
 
 
-#' VL PEDS Datasets
-#'
+#' @title PEDS Viral Load Datasets
+#' @description This is a subset of extract_viralload
 #' @param df_msd
-#' @param lst_ou
+#' @param rep_qtr
 #' @return VL Datasets
 #'
 extract_peds_viralload <-
-  function(df_msd,
-           lst_ou = NULL) {
+  function(df_msd, rep_qtr = "FY20Q3") {
 
+    # Variables
+    df <- {{df_msd}}
+    pd <- {{rep_pd}}
+
+    # Proceed with filters
+    df_vl <- df %>%
+      filter(
+        standardizeddisaggregate %in%
+               c("Age/Sex/HIVStatus", "Age/Sex/Indication/HIVStatus")
+      ) %>%
+      mutate(
+        indicator = if_else(
+          numeratordenom == "D",
+          paste0(indicator, "_D"),
+          indicator),
+        fundingagency = if_else(
+          fundingagency == "HHS/CDC",
+          "CDC",
+          fundingagency)
+      ) %>%
+      group_by(fiscal_year,
+               operatingunit,
+               psnuuid,
+               psnu,
+               trendscoarse,
+               indicator,
+               fundingagency) %>%
+      summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
+      ungroup() %>%
+      reshape_msd(clean = TRUE) %>%
+      dplyr::select(-period_type) %>%
+      spread(indicator, val)
+
+    # Calculate VL Stats
+    df_vl <- df_vl %>%
+      group_by(operatingunit, psnuuid, psnu, trendscoarse, fundingagency) %>%
+      mutate(VLC = TX_PVLS_D / lag(TX_CURR, 2, order_by = period)) %>%
+      ungroup() %>%
+      filter(period == pd, trendscoarse == "<15") %>%
+      mutate(
+        VLS = (TX_PVLS / TX_PVLS_D) * VLC,
+        VLnC = case_when(
+          VLC > 1 ~ 0,
+          TRUE ~ 1 - VLC
+        ),
+        ou_label = paste0(
+          operatingunit,
+          " (",
+          lag(TX_CURR, 2, order_by = period) %>% comma(accuracy = 1),
+          ")"
+        ),
+        psnu_short = case_when(
+          str_detect(psnu, " County$") ~  str_remove(psnu, " County$"),
+          str_detect(psnu, " District$") ~  str_remove(psnu, " District$"),
+          TRUE ~ psnu
+        ),
+        psnu_label = case_when(
+          VLnC > .7 ~ psnu_short,
+          TRUE ~ ""
+        )
+      )
+
+    return(df_vl)
   }
 
 

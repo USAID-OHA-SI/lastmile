@@ -7,12 +7,130 @@
 
 #' @title Build PEPFAR Spatial Datasets
 #'
-#' @param terr_path path to terrain raster file
-#' @return RasterLayer
+#' @param dir_geo Directory of shapefile
+#' @param name    Name of the shapefile
+#' @param df_psnu MSD PSNU x IM DataFrame
+#' @return Spatial DataFrame
 #'
-build_perfar_spdf <-
-  function() {
+build_spdf <-
+  function(dir_geo = "../../GEODATA/PEPFAR",
+           name = "VcPepfarPolygons.shp",
+           df_psnu = NULL) {
 
+    # Variables
+    dir_geo <- {{dir_geo}}
+    file_name <- {{name}}
+    df <- {{df_psnu}}
+
+    # Geo - Idenfity shapefile path
+    file_shp <- list.files(
+        path = dir_geo,
+        pattern = file_name,
+        recursive = T,
+        full.names = T
+      )
+
+    cat("\nSpatial dataset: ",
+        Wavelength::paint_blue(file_shp),
+        "\n")
+
+    # Make sure file exists
+    if ( !length(file_shp) ) {
+      cat("\n",
+          Wavelength::paint_red("Shapefile does not seem to exist."),
+          "\n")
+
+      return(NULL)
+    }
+
+    # Geo - Read shapefile
+    spdf <- file_shp %>% read_sf()
+
+    # Check if orgs needs to be identified
+    if (is.null(df)) {
+      cat("\n",
+          Wavelength::paint_blue("\nResult as spatial data with UID only."),
+          "\n")
+
+      return(spdf)
+    }
+
+    # OUs
+    ous <- df %>%
+      distinct(operatingunit, operatingunituid) %>%
+      arrange(operatingunit)
+
+    spdf <- spdf %>%
+      left_join(ous, by = c("uid" = "operatingunituid")) %>%
+      dplyr::mutate(
+        type = case_when(
+          !is.na(operatingunit) ~ 'OU',
+          TRUE ~ NA_character_
+        )
+      )
+
+    # SNU1
+    snus <- df %>%
+      dplyr::select(operatingunit, countryname, snu1, snu1uid) %>%
+      distinct(operatingunit, countryname, snu1, snu1uid) %>%
+      filter(!is.na(snu1)) %>%
+      arrange(operatingunit, countryname, snu1)
+
+    spdf <- spdf %>%
+      left_join(snus, by = c("uid" = "snu1uid")) %>%
+      rename(operatingunit = operatingunit.x) %>%
+      mutate(
+        type = case_when(
+          is.na(type) & !is.na(operatingunit.y) ~ "SNU1",
+          TRUE ~ type
+        )
+      ) %>%
+      dplyr::select(-operatingunit.y)
+
+    # PSNU
+    psnus <- df %>%
+      dplyr::select(operatingunit,
+                    operatingunituid,
+                    countryname,
+                    snu1,
+                    snu1uid,
+                    psnu,
+                    psnuuid) %>%
+      distinct(operatingunit, countryname, snu1, snu1uid, psnu, psnuuid) %>%
+      arrange(operatingunit, countryname, snu1, psnu)
+
+    spdf <- spdf %>%
+      left_join(psnus, by = c("uid" = "psnuuid")) %>%
+      rename(
+        countryname = countryname.x,
+        operatingunit = operatingunit.x,
+        snu1 = snu1.x
+      ) %>%
+      mutate(
+        type = case_when(
+          is.na(type) & !is.na(operatingunit.y) ~ "PSNU",
+          TRUE ~ type
+        ),
+        countryname = case_when(
+          is.na(countryname) & type == "PSNU" ~ countryname.y,
+          TRUE ~ countryname
+        ),
+        operatingunit = case_when(
+          is.na(operatingunit) & type == "PSNU" ~ operatingunit.y,
+          TRUE ~ operatingunit
+        ),
+        snu1 = case_when(
+          is.na(snu1) & type == "PSNU" ~ snu1.y,
+          TRUE ~ snu1
+        ),
+        type = case_when(
+          !is.na(snu1uid) & uid == snu1uid & type == "SNU1" ~ "PSNU",
+          TRUE ~ type
+        )
+      ) %>%
+      dplyr::select(-ends_with(".y"))
+
+    return(spdf)
   }
 
 
@@ -75,7 +193,7 @@ get_basemap <-
     # Filter by OU / Country
     if (!is.null(country)) {
       df_geo <- df_geo %>%
-        filter(countryname == country)
+        filter(operatingunit == country)
     }
 
     df_geo <- df_geo %>%
