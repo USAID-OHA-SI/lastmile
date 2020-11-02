@@ -174,7 +174,74 @@ get_output_name <-
 }
 
 
+#' @title Map TX
+#'
+#' @param cname Country name
+#' @param save Save output of not
+#' return ggplot plot
+#'
+tx_batch <- function(cname, save = F) {
+  country <- {{cname}}
 
+  p1 <- map_generic(
+    spdf = spdf_pepfar,
+    df = df_tx_bad,
+    mapvar = TX_ML_PLP,
+    cntry = country,
+    terr_raster = terr,
+    agency = T,
+    facet_rows = 2,
+    save = TRUE,
+    four_parts = F
+  )
+
+  p2 <- tx_graph(
+    spdf = spdf_pepfar,
+    df_gph = df_tx_bad,
+    mapvar = TX_ML_PLP,
+    cntry = country
+  )
+
+  (p1 + p2) +
+    plot_layout(widths = c(1, 1)) +
+    plot_annotation(
+      caption = paste0(
+        "OHA/SIEI - Data Source: MSD ",
+        rep_pd,
+        "_",
+        country,
+        "TX_ML Patient Loss Proxy \n",
+        "TX_ML_PLP = Number not retained on ART (LTFU, Died, Stopped) /
+        (TX_CURR_prev + TX_NEW + TX_RTT) \n",
+        "Produced on ",
+        Sys.Date(),
+        ", Missing data shown in gray on map."
+      ),
+      title = paste0(str_to_upper(country), " TX_ML Patient Loss Proxy")
+    )
+
+  if (save == TRUE) {
+    ggsave(
+      here("Graphics",
+           paste0(
+             rep_pd,
+             "_",
+             "TX_ML_PLP_",
+             country,
+             "_",
+             Sys.Date(),
+             ".png"
+           )
+      ),
+      plot = last_plot(),
+      scale = 1.2,
+      dpi = 400,
+      width = 10,
+      height = 7,
+      units = "in"
+    )
+  }
+}
 
 
 # DATA --------------------------------------------------------------
@@ -248,159 +315,25 @@ lst_ouuid <- df_ous %>%
 ## MER Data Munging
 
 ## Filter & Summarize
-
 df_vl <- extract_viralload(df_msd = df_psnu,
                            rep_agency = rep_agency,
                            rep_fy = rep_fy,
                            lst_ous = lst_ouuid)
 
-df_vl %>% glimpse()
-
-
-# # VL
-# df_vl <- df_psnu %>%
-#   filter(
-#     fiscal_year == rep_fy,
-#     fundingagency %in% rep_agency,
-#     indicator %in% c("TX_PVLS", "TX_CURR"),
-#     standardizeddisaggregate %in% c("Total Numerator", "Total Denominator"),
-#     operatingunituid %in% lst_ouuid
-#   ) %>%
-#   mutate(
-#     indicator = if_else(numeratordenom == "D", paste0(indicator, "_D"), indicator),
-#     fundingagency = if_else(fundingagency == "HHS/CDC", "CDC", fundingagency)
-#   ) %>%
-#   group_by(fiscal_year,
-#            operatingunit,
-#            psnuuid,
-#            psnu,
-#            indicator,
-#            fundingagency) %>%
-#   summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
-#   ungroup() %>%
-#   reshape_msd(clean = TRUE) %>%
-#   dplyr::select(-period_type) %>%
-#   spread(indicator, val)
-#
-#
-# ## Calculate VL Stats
-# df_vl <- df_vl %>%
-#   group_by(operatingunit, psnuuid, psnu, fundingagency) %>%
-#   mutate(VLC = TX_PVLS_D / lag(TX_CURR, 2, order_by = period)) %>%
-#   ungroup() %>%
-#   filter(period == rep_pd) %>%
-#   mutate(
-#     VLS = (TX_PVLS / TX_PVLS_D) * VLC,
-#     VLnC = case_when(
-#       VLC > 1 ~ 0,
-#       TRUE ~ 1 - VLC
-#     ),
-#     ou_label = paste0(
-#       operatingunit,
-#       " (",
-#       lag(TX_CURR, 2, order_by = period) %>% comma(accuracy = 1),
-#       ")"
-#     ),
-#     psnu_short = case_when(
-#       str_detect(psnu, " County$") ~  str_remove(psnu, " County$"),
-#       str_detect(psnu, " District$") ~  str_remove(psnu, " District$"),
-#       TRUE ~ psnu
-#     ),
-#     psnu_label = case_when(
-#       VLnC > .7 ~ psnu_short,
-#       TRUE ~ ""
-#     )
-#   )
-
 
 ## VL PEDs
-
 df_vl_u15 <- extract_viralload(df_msd = df_psnu,
                                rep_agency = rep_agency,
                                rep_fy = rep_fy,
                                peds = TRUE,
                                lst_ous = lst_ouuid)
 
-df_vl_u15 %>% glimpse()
-
-
-# df_vl_u15 <- df_psnu %>%
-#   filter(
-#     fiscal_year == rep_fy,
-#     fundingagency %in% rep_agency,
-#     indicator %in% c("TX_PVLS", "TX_CURR"),
-#     standardizeddisaggregate %in% c("Age/Sex/HIVStatus", "Age/Sex/Indication/HIVStatus"),
-#     operatingunituid %in% lst_ouuid
-#   ) %>%
-#   mutate(
-#     indicator = if_else(numeratordenom == "D", paste0(indicator, "_D"), indicator),
-#     fundingagency = if_else(fundingagency == "HHS/CDC", "CDC", fundingagency)
-#   ) %>%
-#   group_by(fiscal_year,
-#            operatingunit,
-#            psnuuid,
-#            psnu,
-#            trendscoarse,
-#            indicator,
-#            fundingagency) %>%
-#   summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
-#   ungroup() %>%
-#   reshape_msd(clean = TRUE) %>%
-#   dplyr::select(-period_type) %>%
-#   spread(indicator, val) %>%
-#   group_by(operatingunit, psnuuid, psnu, trendscoarse, fundingagency) %>%
-#   mutate(VLC = TX_PVLS_D / lag(TX_CURR, 2, order_by = period)) %>%
-#   ungroup() %>%
-#   filter(period == rep_pd, trendscoarse == "<15") %>%
-#   mutate(
-#     VLS = (TX_PVLS / TX_PVLS_D) * VLC,
-#     VLnC = case_when(
-#       VLC > 1 ~ 0,
-#       TRUE ~ 1 - VLC
-#     ),
-#     ou_label = paste0(
-#       operatingunit,
-#       " (",
-#       lag(TX_CURR, 2, order_by = period) %>% comma(accuracy = 1),
-#       ")"
-#     ),
-#     psnu_short = case_when(
-#       str_detect(psnu, " County$") ~  str_remove(psnu, " County$"),
-#       str_detect(psnu, " District$") ~  str_remove(psnu, " District$"),
-#       TRUE ~ psnu
-#     ),
-#     psnu_label = case_when(
-#       VLnC > .7 ~ psnu_short,
-#       TRUE ~ ""
-#     )
-#   )
 
 
 #PEDs - EID
-df_eid <- df_psnu %>%
-  filter(
-    fiscal_year == rep_fy,
-    fundingagency %in% rep_agency,
-    indicator %in% c("PMTCT_EID_Less_Equal_Two_Months", "PMTCT_EID"),
-    operatingunituid %in% lst_ouuid
-  ) %>%
-  mutate(
-    indicator = if_else(numeratordenom == "D", paste0(indicator, "_D"), indicator),
-    fundingagency = if_else(fundingagency == "HHS/CDC", "CDC", fundingagency)
-  ) %>%
-  filter(indicator != "PMTCT_EID") %>%
-  group_by(fiscal_year,
-           operatingunit,
-           psnuuid,
-           psnu,
-           indicator,
-           fundingagency) %>%
-  summarise(across(starts_with("cumulative"), sum, na.rm = TRUE)) %>%
-  ungroup() %>%
-  reshape_msd(clean = TRUE) %>%
-  dplyr::select(-period_type) %>%
-  spread(indicator, val) %>%
-  mutate(eid_cov_under2 = (PMTCT_EID_Less_Equal_Two_Months / PMTCT_EID_D))
+df_eid <- extract_eid_viralload(df_msd = df_psnu,
+                                rep_agency = rep_agency,
+                                rep_fy = rep_fy)
 
 
 # TX_ML -- aggregate bad events then divide by TX_CURR_lagged_1
@@ -493,74 +426,19 @@ ous <-
   as_tibble() %>%
   rename(countryname = country)
 
+
 ## Geodata
 
 ## Terrain Raster
 terr <- get_raster(terr_path = dir_terr)
 
 ## GEO
-build_spdf()
-
-build_spdf(name = "sample.shp")
 
 spdf_pepfar <- build_spdf(df_psnu = df_psnu)
 
 spdf_pepfar %>%
   st_set_geometry(NULL) %>%
   prinf()
-
-# ## ORGs
-# spdf_pepfar <- list.files(
-#     path = dir_geo,
-#     pattern = "VcPepfarPolygons.shp",
-#     recursive = T,
-#     full.names = T
-#   ) %>%
-#   read_sf()
-#
-#
-# ## Geo - identify ous
-# spdf_pepfar <- spdf_pepfar %>%
-#   left_join(ous, by = "uid")
-#
-# ## Geo - identify snu1
-# spdf_pepfar <- spdf_pepfar %>%
-#   left_join(df_snus, by = c("uid" = "snu1uid")) %>%
-#   rename(countryname = countryname.x) %>%
-#   mutate(
-#     type = case_when(is.na(type) & !is.na(operatingunit) ~ "SNU1",
-#                      TRUE ~ type),
-#     countryname = case_when(
-#       is.na(countryname) & type == "SNU1" ~ countryname.y,
-#       TRUE ~ countryname
-#     )
-#   ) %>%
-#   dplyr::select(-countryname.y)
-#
-# ## Geo - identify psnu
-# spdf_pepfar <- spdf_pepfar %>%
-#   left_join(df_psnus, by = c("uid" = "psnuuid")) %>%
-#   rename(countryname = countryname.x,
-#          operatingunit = operatingunit.x,
-#          snu1 = snu1.x) %>%
-#   mutate(
-#     type = case_when(is.na(type) & !is.na(operatingunit.y) ~ "PSNU",
-#                      TRUE ~ type),
-#     countryname = case_when(
-#       is.na(countryname) & type == "PSNU" ~ countryname.y,
-#       TRUE ~ countryname
-#     ),
-#     operatingunit = case_when(
-#       is.na(operatingunit) & type == "PSNU" ~ operatingunit.y,
-#       TRUE ~ operatingunit
-#     ),
-#     snu1 = case_when(is.na(snu1) & type == "PSNU" ~ snu1.y,
-#                      TRUE ~ snu1),
-#     type = case_when(!is.na(snu1uid) &
-#                        uid == snu1uid & type == "SNU1" ~ "PSNU",
-#                      TRUE ~ type)
-#   ) %>%
-#   dplyr::select(-ends_with(".y"))
 
 
 # VIZ --------------------------------------
@@ -586,6 +464,7 @@ spdf_pepfar %>%
   ) +
   si_style_map()
 
+
 ## Countries [Members of Regional OUs, also used as SNU1] => 44
 spdf_pepfar %>%
   filter(!is.na(countryname), type == "Country") %>%
@@ -608,15 +487,13 @@ spdf_pepfar %>%
   map(.x, .f = ~ map_org(spdf_pepfar, org_uid = .x, title = .x))
 
 
-
 ## Individual country basemaps => Ressource Intensive
 spdf_pepfar %>%
   st_set_geometry(NULL) %>%
   filter(type == "OU") %>%
   pull(operatingunit) %>%
-  nth(8) %>%                  # This is test for Cote d'Ivoire
-  map(.x,
-      .f = ~ get_basemap(
+  nth(8) %>%                  # This is a test for Cote d'Ivoire
+  map(.x, .f = ~ get_basemap(
         spdf = spdf_pepfar,
         cntry = .x,
         terr_raster = terr
@@ -626,11 +503,11 @@ spdf_pepfar %>%
 ## Test Individual VL maps
 
 cname <- "Nigeria"
-cname <- "Kenya"
-cname <- "Ukraine" # Nah
-cname <- "Lesotho"
-cname <- "Zambia"
-cname <- "Botswana"
+# cname <- "Kenya"
+# cname <- "Ukraine" # Nah
+# cname <- "Lesotho"
+# cname <- "Zambia"
+# cname <- "Botswana"
 
 map_viralload(
   spdf = spdf_pepfar,
@@ -706,6 +583,7 @@ map_vlc_eid(
 )
 
 # Test TX_ML_PLP map
+
 map_generic(
   spdf = spdf_pepfar,
   df = df_tx_bad,
@@ -720,22 +598,10 @@ map_generic(
 
 
 
-
-
-
-
-
-# Dot plot / bar graph to go with map
-tx_graph(spdf_pepfar, df_tx_bad, TX_ML_PLP, "Kenya")
-
-
-
-
 # BATCH VIZ ---------------------------------------------------------------
 
 
 ## Batch mapping
-#df_vl_usaid <- df_vl %>% filter(fundingagency == "USAID")
 
 map_ous <- df_vl %>%
   filter(!str_detect(operatingunit, " Region$"),
@@ -744,13 +610,10 @@ map_ous <- df_vl %>%
   pull()
 
 
-
 ## VLS
 map_ous %>%
   nth(2) %>%
-  map(
-    .x,
-    .f = ~ map_viralload(
+  map(.x, .f = ~ map_viralload(
       spdf = spdf_pepfar,
       df = df_vl_usaid ,
       vl_variable = "VLS",
@@ -762,9 +625,7 @@ map_ous %>%
 
 ## VLC
 map_ous %>%
-  map(
-    .x,
-    .f = ~ map_viralload(
+  map(.x, .f = ~ map_viralload(
       spdf = spdf_pepfar,
       df = df_vl_usaid,
       vl_variable = "VLC",
@@ -777,9 +638,7 @@ map_ous %>%
 ## VLnC
 map_ous %>%
   nth(11) %>%
-  map(
-    .x,
-    .f = ~ map_viralload(
+  map(.x, .f = ~ map_viralload(
       spdf = spdf_pepfar,
       df = df_vl_usaid,
       vl_variable = "VLnC",
@@ -792,9 +651,7 @@ map_ous %>%
 
 ## ALL
 map_ous %>%
-  map(
-    .x,
-    .f = ~ map_viralloads(
+  map(.x, .f = ~ map_viralloads(
       spdf = spdf_pepfar,
       df = df_vl,
       cntry = .x,
@@ -807,9 +664,7 @@ map_ous %>%
 
 ## PEDS ALL
 map_ous %>%
-  map(
-    .x,
-    .f = ~ map_peds_viralloads(
+  map(.x, .f = ~ map_peds_viralloads(
       spdf = spdf_pepfar,
       df = df_vl_u15,
       cntry = .x,
@@ -830,9 +685,7 @@ map_ous <- df_eid %>%
 # Batch
 map_ous %>%
   nth(13) %>%
-  map(
-    .x,
-    .f = ~ map_vlc_eid(
+  map(.x, .f = ~ map_vlc_eid(
       spdf = spdf_pepfar,
       df = df_vl_u15,
       vl_variable = "VLC",
@@ -845,78 +698,10 @@ map_ous %>%
   )
 
 
+# Dot plot / bar graph to go with map
+tx_graph(spdf_pepfar, df_tx_bad, TX_ML_PLP, "Kenya")
 
 # Batch Patient Loss Proxy Maps + graphs
-
-
-tx_batch <- function(cname, save = F) {
-  country <- {
-    {
-      cname
-    }
-  }
-  p1 <-   map_generic(
-    spdf = spdf_pepfar,
-    df = df_tx_bad,
-    mapvar = TX_ML_PLP,
-    cntry = country,
-    terr_raster = terr,
-    agency = T,
-    facet_rows = 2,
-    save = TRUE,
-    four_parts = F
-  )
-
-  p2 <-
-    tx_graph(
-      spdf = spdf_pepfar,
-      df_gph = df_tx_bad,
-      mapvar = TX_ML_PLP,
-      cntry = country
-    )
-
-  (p1 + p2) +
-    plot_layout(widths = c(1, 1)) +
-    plot_annotation(
-      caption = paste0(
-        "OHA/SIEI - Data Source: MSD ",
-        rep_pd,
-        "_",
-        country,
-        "TX_ML Patient Loss Proxy \n",
-        "TX_ML_PLP = Number not retained on ART (LTFU, Died, Stopped) / (TX_CURR_prev + TX_NEW + TX_RTT) \n",
-        "Produced on ",
-        Sys.Date(),
-        ", Missing data shown in gray on map."
-      ),
-      title = paste0(str_to_upper(country), " TX_ML Patient Loss Proxy")
-    )
-
-  if (save == TRUE) {
-    ggsave(
-      here(
-        "Graphics",
-        paste0(
-          rep_pd,
-          "_",
-          "TX_ML_PLP_",
-          country,
-          "_",
-          Sys.Date(),
-          ".png"
-        )
-      ),
-      plot = last_plot(),
-      scale = 1.2,
-      dpi = 400,
-      width = 10,
-      height = 7,
-      units = "in"
-    )
-  }
-
-}
-
 tx_batch(cname = "Nigeria", save = TRUE)
 
 

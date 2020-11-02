@@ -198,14 +198,66 @@ extract_peds_viralload <-
 
 #' EID PEDS Datasets
 #'
-#' @param df_msd
-#' @param lst_ou
-#' @return VL Datasets
+#' @param df_msd     PEPFAR MSD datasets
+#' @param rep_agency Agency (ies)
+#' @param rep_fy     Fiscal Year
+#' @param lst_ou     List of OU UIDs
+#' @return EID VL Datasets
 #'
 extract_eid_viralload <-
   function(df_msd,
-           lst_ou = NULL) {
+           rep_agency = "USAID",
+           rep_fy = 2020,
+           lst_ous = NULL) {
 
+    # Variables
+    df <- {{df_msd}}
+    agencies <- as.vector({{rep_agency}})
+    fy <- {{rep_fy}}
+    ous <- {{lst_ous}}
+
+    # Filter and summarise
+    df_eid <- df %>%
+      filter(
+        fiscal_year == fy,
+        fundingagency %in% agencies,
+        indicator %in% c("PMTCT_EID_Less_Equal_Two_Months", "PMTCT_EID")
+      )
+
+    # Target ous
+    if (!is.null(ous)) {
+      df_eid <- df_eid %>%
+        filter(operatingunituid %in% ous)
+    }
+
+    df_eid <- df_eid %>%
+      mutate(
+        indicator = if_else(
+          numeratordenom == "D",
+          paste0(indicator, "_D"),
+          indicator
+        ),
+        fundingagency = if_else(
+          fundingagency == "HHS/CDC",
+          "CDC",
+          fundingagency
+        )
+      ) %>%
+      filter(indicator != "PMTCT_EID") %>%
+      group_by(fiscal_year,
+               operatingunit,
+               psnuuid,
+               psnu,
+               indicator,
+               fundingagency) %>%
+      summarise(across(starts_with("cumulative"), sum, na.rm = TRUE)) %>%
+      ungroup() %>%
+      reshape_msd(clean = TRUE) %>%
+      dplyr::select(-period_type) %>%
+      spread(indicator, val) %>%
+      mutate(eid_cov_under2 = (PMTCT_EID_Less_Equal_Two_Months / PMTCT_EID_D))
+
+    return(df_eid)
   }
 
 
