@@ -429,7 +429,7 @@ map_viralload <-
       )
 
 
-    print(theme_map)
+    #print(theme_map)
 
 
     if (save == TRUE) {
@@ -515,7 +515,7 @@ map_viralloads <-
       plot_layout(widths = c(1, 1, 1)) +
       plot_annotation(caption = get_caption(country))
 
-    print(m_all)
+    #print(m_all)
 
     # Save output
     if (save == TRUE) {

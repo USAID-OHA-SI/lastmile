@@ -264,7 +264,7 @@ get_basemap <-
     }
 
     # print and return
-    print(m)
+    #print(m)
 
     return(m)
   }
