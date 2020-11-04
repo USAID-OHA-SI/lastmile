@@ -626,7 +626,7 @@ map_peds_viralloads <-
 #' @param gen_title returns a generic title directly passed to map
 #' @param agency if true adds facet wrap to map / owise data are combined
 #' @return ggplot plot of the map
-# Map Generic
+#
 
 map_generic <-
   function(spdf,
@@ -882,3 +882,84 @@ tx_graph <-
 
     return(p)
   }
+
+
+#' @title Map TX
+#'
+#' @param cname Country name
+#' @param save Save output of not
+#' return ggplot plot
+#'
+#tx_batch <- function(cname, save = F) {
+tx_batch <- function(spdf,
+                     df_gen,
+                     mapvar,
+                     cntry,
+                     terr_raster,
+                     save = FALSE,
+                     agency = TRUE,
+                     facet_rows = 1,
+                     gen_title = "",
+                     four_parts = TRUE) {
+
+  country <- {{cntry}}
+
+  p1 <- map_generic(
+    spdf = spdf,
+    df_gen = df_gen,
+    mapvar = TX_ML_PLP,
+    cntry = country,
+    terr_raster = terr_raster,
+    agency = agency,
+    facet_rows = 2,
+    save = save,
+    four_parts = four_parts
+  )
+
+  p2 <- tx_graph(
+    spdf = spdf_pepfar,
+    df_gph = df_gen,
+    mapvar = TX_ML_PLP,
+    cntry = country
+  )
+
+  (p1 + p2) +
+    plot_layout(widths = c(1, 1)) +
+    plot_annotation(
+      caption = paste0(
+        "OHA/SIEI - Data Source: MSD ",
+        rep_pd,
+        "_",
+        country,
+        "TX_ML Patient Loss Proxy \n",
+        "TX_ML_PLP = Number not retained on ART (LTFU, Died, Stopped) /
+        (TX_CURR_prev + TX_NEW + TX_RTT) \n",
+        "Produced on ",
+        Sys.Date(),
+        ", Missing data shown in gray on map."
+      ),
+      title = paste0(str_to_upper(country), " TX_ML Patient Loss Proxy")
+    )
+
+  if (save == TRUE) {
+    ggsave(
+      here("Graphics",
+           paste0(
+             rep_pd,
+             "_",
+             "TX_ML_PLP_",
+             country,
+             "_",
+             Sys.Date(),
+             ".png"
+           )
+      ),
+      plot = last_plot(),
+      scale = 1.2,
+      dpi = 400,
+      width = 10,
+      height = 7,
+      units = "in"
+    )
+  }
+}

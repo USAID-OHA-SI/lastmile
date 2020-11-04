@@ -65,6 +65,7 @@ rep_pd = rep_fy %>%
 ## Utility functions
 source("./Scripts/00_Geo_Utilities.R")
 source("./Scripts/00_VL_Utilities.R")
+source("./Scripts/00_ML_Utilities.R")
 
 
 #' @title Generate plot title
@@ -174,76 +175,6 @@ get_output_name <-
 }
 
 
-#' @title Map TX
-#'
-#' @param cname Country name
-#' @param save Save output of not
-#' return ggplot plot
-#'
-tx_batch <- function(cname, save = F) {
-  country <- {{cname}}
-
-  p1 <- map_generic(
-    spdf = spdf_pepfar,
-    df = df_tx_bad,
-    mapvar = TX_ML_PLP,
-    cntry = country,
-    terr_raster = terr,
-    agency = T,
-    facet_rows = 2,
-    save = TRUE,
-    four_parts = F
-  )
-
-  p2 <- tx_graph(
-    spdf = spdf_pepfar,
-    df_gph = df_tx_bad,
-    mapvar = TX_ML_PLP,
-    cntry = country
-  )
-
-  (p1 + p2) +
-    plot_layout(widths = c(1, 1)) +
-    plot_annotation(
-      caption = paste0(
-        "OHA/SIEI - Data Source: MSD ",
-        rep_pd,
-        "_",
-        country,
-        "TX_ML Patient Loss Proxy \n",
-        "TX_ML_PLP = Number not retained on ART (LTFU, Died, Stopped) /
-        (TX_CURR_prev + TX_NEW + TX_RTT) \n",
-        "Produced on ",
-        Sys.Date(),
-        ", Missing data shown in gray on map."
-      ),
-      title = paste0(str_to_upper(country), " TX_ML Patient Loss Proxy")
-    )
-
-  if (save == TRUE) {
-    ggsave(
-      here("Graphics",
-           paste0(
-             rep_pd,
-             "_",
-             "TX_ML_PLP_",
-             country,
-             "_",
-             Sys.Date(),
-             ".png"
-           )
-      ),
-      plot = last_plot(),
-      scale = 1.2,
-      dpi = 400,
-      width = 10,
-      height = 7,
-      units = "in"
-    )
-  }
-}
-
-
 # DATA --------------------------------------------------------------
 
 ## File path + name
@@ -340,40 +271,46 @@ df_eid <- extract_eid_viralload(df_msd = df_psnu,
 # Numerator: Number of patients not retained on ART (LTFU, Died, Stopped)
 # Denominator: TX_CURR_lag1 + TX_NEW_curr + TX_RTT
 
-df_tx_ml <- df_psnu %>%
-  filter(
-    fiscal_year == rep_fy,
-    fundingagency %in% c("USAID", "HHS/CDC"),
-    indicator %in% c("TX_ML"),
-    standardizeddisaggregate %in% c("Age/Sex/ARTNoContactReason/HIVStatus"),
-    operatingunituid %in% lst_ouuid,
-    typemilitary == 'N'
-  ) %>%
-  mutate(
-    fundingagency = if_else(fundingagency == "HHS/CDC", "CDC", fundingagency),
-    otherdisaggregate = str_remove(otherdisaggregate, "No Contact Outcome - "),
-    tx_badevents = case_when(
-      otherdisaggregate %in% c(
-        "Died",
-        "Lost to Follow-Up <3 Months Treatment",
-        "Lost to Follow-Up 3+ Months Treatment",
-        "Refused Stopped Treatment"
-      ) ~ "Bad events",
-      TRUE ~ NA_character_
-    )
-  ) %>%
-  filter(!is.na(tx_badevents) & indicator == "TX_ML") %>%
-  group_by(operatingunit,
-           snu1,
-           snu1uid,
-           psnu,
-           psnuuid,
-           indicator,
-           tx_badevents,
-           fundingagency) %>%
-  summarize_at(vars(targets:cumulative), sum, na.rm = TRUE) %>%
-  ungroup() %>%
-  dplyr::select(-(targets:qtr4), TX_ML_bad = cumulative,-indicator,-tx_badevents)
+df_tx_ml <- extract_tx_ml(df_msd = df_psnu,
+                          rep_agency = rep_agency,
+                          rep_fy = rep_fy,
+                          rep_pd = 3)
+
+
+# df_tx_ml <- df_psnu %>%
+#   filter(
+#     fiscal_year == rep_fy,
+#     fundingagency %in% c("USAID", "HHS/CDC"),
+#     indicator %in% c("TX_ML"),
+#     standardizeddisaggregate %in% c("Age/Sex/ARTNoContactReason/HIVStatus"),
+#     operatingunituid %in% lst_ouuid,
+#     typemilitary == 'N'
+#   ) %>%
+#   mutate(
+#     fundingagency = if_else(fundingagency == "HHS/CDC", "CDC", fundingagency),
+#     otherdisaggregate = str_remove(otherdisaggregate, "No Contact Outcome - "),
+#     tx_badevents = case_when(
+#       otherdisaggregate %in% c(
+#         "Died",
+#         "Lost to Follow-Up <3 Months Treatment",
+#         "Lost to Follow-Up 3+ Months Treatment",
+#         "Refused Stopped Treatment"
+#       ) ~ "Bad events",
+#       TRUE ~ NA_character_
+#     )
+#   ) %>%
+#   filter(!is.na(tx_badevents) & indicator == "TX_ML") %>%
+#   group_by(operatingunit,
+#            snu1,
+#            snu1uid,
+#            psnu,
+#            psnuuid,
+#            indicator,
+#            tx_badevents,
+#            fundingagency) %>%
+#   summarize_at(vars(targets:cumulative), sum, na.rm = TRUE) %>%
+#   ungroup() %>%
+#   dplyr::select(-(targets:qtr4), TX_ML_bad = cumulative,-indicator,-tx_badevents)
 
 
 df_tx <- df_psnu %>%
@@ -384,7 +321,10 @@ df_tx <- df_psnu %>%
     standardizeddisaggregate %in% c("Total Numerator")
   ) %>%
   mutate(
-    fundingagency = if_else(fundingagency == "HHS/CDC", "CDC", fundingagency),
+    fundingagency = if_else(
+      fundingagency == "HHS/CDC",
+      "CDC",
+      fundingagency),
     operatingunituid %in% lst_ouuid
   ) %>%
   group_by(fiscal_year,
@@ -407,8 +347,7 @@ df_tx <- df_psnu %>%
   mutate(TX_BADEVENTS_DENOM = sum(TX_CURR_Q2, TX_NEW_Q3, TX_RTT_Q3, na.rm = T))
 
 
-df_tx_bad <-
-  df_tx %>%
+df_tx_bad <- df_tx %>%
   left_join(df_tx_ml,
             by = c("operatingunit", "psnuuid", "psnu", "fundingagency")) %>%
   mutate(TX_ML_PLP = round((TX_ML_bad / TX_BADEVENTS_DENOM), digits = 3))
