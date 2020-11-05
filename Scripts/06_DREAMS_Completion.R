@@ -173,17 +173,18 @@ zam_map_for_comms <- terrain_map(countries = "Zambia",
                aes(label = label),
                size = 3, color = grey90k, weight = "bold", nudge_x = .6, nudge_y = .2) +
   si_style_map() +
+  labs(caption = "FY20Q2; Source: FY20Q3c MSD") +
   theme(
     legend.position =  "bottom",
     legend.key.width = ggplot2::unit(1.5, "cm"),
-    legend.key.height = ggplot2::unit(.5, "cm")) +
-    labs(title = "% who completed at least primary package \n after being in DREAMS for 13+ months",
-         caption = "FY20Q2; Source: FY20Q3c MSD")
+    legend.key.height = ggplot2::unit(.5, "cm")
+  )
+
 
 print(zam_map_for_comms)
 
 
-ggsave(here("Graphics", "Zambia_DREAMS_percentcompletion_13plust_months_comms.png"),
+ggsave(here("Graphics", "Zambia_DREAMS_percentcompletion_13plust_months_comms2.png"),
        scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
 
 # Plot
