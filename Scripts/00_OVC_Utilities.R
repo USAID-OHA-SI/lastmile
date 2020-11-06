@@ -127,6 +127,11 @@ map_ovc_coverage <-
   }
 
 
+#' @title Plot OVC Proxy Coverage
+#'
+#' @param df_ovc OVC Datasets
+#' @return ggplot plot
+#'
 plot_ovc_coverage <-
   function(df_ovc) {
 

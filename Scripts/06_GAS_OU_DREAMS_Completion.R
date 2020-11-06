@@ -3,6 +3,7 @@
 ##  PURPOSE: % ompletion of primary package among those in DREAMS 13+ mo
 ##  LICENCE: MIT
 ##  DATE:    2020-09-17
+##  UPDATED: 2020-11-06
 
 # Libraries
 library(extrafont)
@@ -15,6 +16,9 @@ library(scales)
 library(patchwork)
 library(ICPIutilities)
 
+# Dependencies
+source("./Scripts/00_Geo_Utilities.R")
+source("./Scripts/00_DREAMS_Utilities.R")
 
 # Globals
 # Globals
@@ -28,15 +32,24 @@ dir_merdata <- "C:/Users/gsarfaty/Documents/DATIM"
 dir_img <- here("Images")
 dir_graphs <- here("Graphics")
 
+# Update paths
+source("../_setup/00_Setup.R")
 
-# MER Data
-file_psnu_im <- (list.files(path = dir_merdata,
-                            pattern = "Structured_.*_PSNU_.*_Zambia.zip",
-                            recursive = FALSE,
-                            full.names = TRUE))
 
+# MER Data - get the latest MSD PSNU x IM file
+# This should return
+# Q3 file => MER_Structured_Datasets_PSNU_IM_FY18-21_20200918_v2_1.zip
+file_psnu_im <- list.files(
+    path = dir_merdata,
+    pattern = "Structured_.*_PSNU_IM_.*_\\d{8}_v.*.zip",
+    recursive = FALSE,
+    full.names = TRUE
+  ) %>%
+  sort() %>%
+  last()
+
+# Read data
 df <- read_msd(file_psnu_im)
-
 
 # GEO Data
 gis_5_sfc <- list.files(dir_geo,
@@ -57,38 +70,47 @@ zam1 <- get_adm_boundaries("ZMB",
 # MER Data Munge ---------------------------------------------------------------------------------
 
 
-AGYW_prev_time<-df %>%
-    filter(fiscal_year=="2020",
-           indicator =="AGYW_PREV",
+AGYW_prev_time <- df %>%
+    filter(fiscal_year == "2020",
+           indicator == "AGYW_PREV",
            !is.na(otherdisaggregate),
            operatingunit %in% c("Zambia")) %>%
-    separate(otherdisaggregate, c("drop","completion"),sep=", ")%>%
-    group_by(fiscal_year,operatingunit,psnuuid,psnu,indicator,completion,otherdisaggregate_sub) %>%
+    separate(otherdisaggregate, c("drop","completion"),sep = ", ") %>%
+    group_by(fiscal_year,operatingunit,psnuuid,psnu,
+             indicator,completion,otherdisaggregate_sub) %>%
     summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
     ungroup() %>%
     select(-c(fiscal_year,qtr1,qtr3,qtr4)) %>%
-    rename(time_dreams=otherdisaggregate_sub) %>%
-    mutate(shortname=str_remove(psnu, "District"),
-           time_dreams=case_when(time_dreams %in% c("<6 Months in DREAMS", "07-12 Months in DREAMS") ~ "Less than 1 year",
-                                 time_dreams %in% c("13-24 Months in DREAMS", "25+ Months in DREAMS") ~ "13+ months"),
-           completion=case_when(completion %in% c("DREAMS Fully Completed","DREAMS Fully Completed and Secondary") ~ "completed",
-                                completion %in% c("DREAMS Not Completed","DREAMS Only Secondary Completed") ~ "not complete")) %>%
-    filter(time_dreams=="13+ months") %>%
+    rename(time_dreams = otherdisaggregate_sub) %>%
+    mutate(
+      shortname = str_remove(psnu, "District"),
+      time_dreams = case_when(
+        time_dreams %in% c("<6 Months in DREAMS",
+                           "07-12 Months in DREAMS") ~ "Less than 1 year",
+        time_dreams %in% c("13-24 Months in DREAMS",
+                           "25+ Months in DREAMS") ~ "13+ months"),
+      completion = case_when(
+        completion %in% c("DREAMS Fully Completed",
+                          "DREAMS Fully Completed and Secondary") ~ "completed",
+        completion %in% c("DREAMS Not Completed",
+                          "DREAMS Only Secondary Completed") ~ "not complete")
+    ) %>%
+    filter(time_dreams == "13+ months") %>%
     group_by(psnuuid,psnu,shortname,completion) %>%
-    summarize_at(vars(qtr2),sum,na.rm=TRUE) %>%
-    spread(completion,qtr2) %>%
+    summarize_at(vars(qtr2), sum, na.rm = TRUE) %>%
+    spread(completion, qtr2) %>%
     rowwise() %>%
-    mutate(total = sum(c_across(completed:`not complete`),na.rm = TRUE)) %>%
+    mutate(total = sum(c_across(completed:`not complete`), na.rm = TRUE)) %>%
     mutate(across(completed:`not complete`, ~ . / total)) %>%
-    rename(completed_13plus=completed,
-           incomplete_13plus=`not complete`,
-           total_13plus=total) %>%
-    gather(indicator,val,completed_13plus:total_13plus)
+    rename(completed_13plus = completed,
+           incomplete_13plus = `not complete`,
+           total_13plus = total) %>%
+    gather(indicator, val, completed_13plus:total_13plus)
 
 
 prct_total <- df %>%
     filter(fiscal_year == "2020",
-                   indicator == "AGYW_PREV",
+           indicator == "AGYW_PREV",
                    !is.na(otherdisaggregate),
                    operatingunit %in% c("Zambia")) %>%
     rename(time_dreams = otherdisaggregate_sub) %>%
@@ -112,8 +134,8 @@ totals <- AGYW_prev_time %>%
     select(c(psnuuid, total_13plus, completed_13plus))
 
 
-AGYW <- rbind(AGYW_prev_time ,prct_total) %>%
-    full_join(totals,by = "psnuuid")
+AGYW <- rbind(AGYW_prev_time, prct_total) %>%
+    full_join(totals, by = "psnuuid")
 
 
 
