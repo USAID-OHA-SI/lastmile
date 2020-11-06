@@ -179,13 +179,16 @@ get_raster <-
 #' @param spdf PEPFAR ORGs Spatial Data
 #' @param cntry OU or Country Name
 #' @param terr_raster RasterLayer
+#' @param add_admins Should the sub-admins be added? Default is false
 #' @return ggplot plot of base map
 #'
 get_basemap <-
   function(spdf,
            cntry = NULL,
-           terr_raster = NULL) {
+           terr_raster = NULL,
+           add_admins = FALSE) {
 
+    # Params
     df_geo <- {{spdf}}
     country <- {{cntry}}
     dta_raster <- {{terr_raster}}
@@ -196,6 +199,7 @@ get_basemap <-
         filter(operatingunit == country)
     }
 
+    # Transform geodata
     df_geo <- df_geo %>%
       sf::st_as_sf() %>%
       sf::st_transform(., crs = sf::st_crs(4326)) %>%
@@ -205,9 +209,13 @@ get_basemap <-
     df_geo0 <- df_geo %>%
       filter(type == "OU")
 
-    # Get snu1 boundaries
+    # Get snu1 or psnu boundaries
     df_geo1 <- df_geo %>%
       filter(type == "SNU1")
+
+    if (nrow(df_geo1) == 0)
+      df_geo1 <- df_geo %>%
+        filter(type == "PSNU")
 
     # Get psnu boundaries
     # df_geo2 <- df_geo %>% filter(type == "PSNU")
@@ -241,13 +249,20 @@ get_basemap <-
         fill = grey10k,
         size = 2,
         alpha = .25
-      ) +
-      geom_sf(
-        data = df_geo1,
-        colour = grey50k,
-        fill = "NA",
-        linetype = "dotted"
-      ) +
+      )
+
+    # Add sub-admins boundaries
+    if (add_admins) {
+      m <- m +
+        geom_sf(
+          data = df_geo1,
+          fill = "NA",
+          linetype = "dotted"
+        )
+    }
+
+    # Add country boundaries
+    m <- m +
       geom_sf(
         data = df_geo0,
         colour = grey90k,
@@ -263,11 +278,9 @@ get_basemap <-
         ggplot2::ylim(-38,-20)
     }
 
-    # print and return
-    #print(m)
-
     return(m)
   }
+
 
 
 #' @title Map specific orgunits
