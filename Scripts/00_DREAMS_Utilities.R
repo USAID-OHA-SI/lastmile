@@ -26,87 +26,60 @@ extract_agyw_prevalence <-
     pd <- {{rep_pd}}
 
     # targeted period
-    pd <- paste0("qtr", pd)
+    curr_pd <- paste0("qtr", pd)
+    sym_curr_pd <- rlang::sym(curr_pd) # To be used with dplyr summarise
 
-    # Exclude targeted period
-    cols <- c("fiscal_year", paste0("qtr", 1:4))
-    cols <- cols[!cols == "qtr2"]
-
+    # Exclude non-targeted period
+    cols <- paste0("qtr", 1:4)
+    remv_cols <- cols[!cols == curr_pd]
 
     # Filter and calculate
-    agyw_prev_time <- df_msd %>%
+    df_dreams <- df_msd %>%
       filter(fiscal_year == fy,
              indicator == "AGYW_PREV",
              !is.na(otherdisaggregate),
              operatingunit %in% cntry) %>%
       separate(otherdisaggregate, c("drop", "completion"), sep = ", ") %>%
-      group_by(fiscal_year, operatingunit, psnuuid, psnu,
-               indicator, completion, otherdisaggregate_sub) %>%
-      summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
-      ungroup() %>%
-      select(-{{cols}}) %>%
       rename(time_dreams = otherdisaggregate_sub) %>%
       mutate(
-        shortname = str_remove(psnu, "District"),
+        shortname = str_remove(psnu, " District$| County$| Municipality$"),
+        shortname = str_remove(shortname, " District$| Metropolitan$"),
         time_dreams = case_when(
           time_dreams %in% c("<6 Months in DREAMS",
-                             "07-12 Months in DREAMS") ~ "Less than 1 year",
+                             "07-12 Months in DREAMS") ~ "leq12m",
           time_dreams %in% c("13-24 Months in DREAMS",
-                             "25+ Months in DREAMS") ~ "13+ months"),
+                             "25+ Months in DREAMS") ~ "gt12m"),
         completion = case_when(
           completion %in% c("DREAMS Fully Completed",
                             "DREAMS Fully Completed and Secondary") ~ "completed",
           completion %in% c("DREAMS Not Completed",
-                            "DREAMS Only Secondary Completed") ~ "not complete")
+                            "DREAMS Only Secondary Completed") ~ "incomplete")
       ) %>%
-      filter(time_dreams == "13+ months") %>%
-      group_by(operatingunit, psnuuid, psnu, shortname, completion) %>%
-      summarize_at(vars({{pd}}), sum, na.rm = TRUE) %>%
-      spread(completion, {{pd}}) %>%
-      rowwise() %>%
-      mutate(total = sum(c_across(completed:`not complete`), na.rm = TRUE)) %>%
-      mutate(across(completed:`not complete`, ~ . / total)) %>%
-      rename(completed_13plus = completed,
-             incomplete_13plus = `not complete`,
-             total_13plus = total) %>%
-      gather(indicator, val, completed_13plus:total_13plus)
-
-    # Percentage
-    prct_total <- df %>%
-      filter(fiscal_year == fy,
-             indicator == "AGYW_PREV",
-             !is.na(otherdisaggregate),
-             operatingunit %in% cntry) %>%
-      rename(time_dreams = otherdisaggregate_sub) %>%
-      mutate(
-        shortname = str_remove(psnu, "District"),
-        time_dreams = case_when(
-          time_dreams %in% c("<6 Months in DREAMS",
-                             "07-12 Months in DREAMS") ~ "Less than 1 year",
-          time_dreams %in% c("13-24 Months in DREAMS",
-                             "25+ Months in DREAMS") ~ "13+ months")) %>%
-      group_by(fiscal_year, operatingunit, shortname,
-               psnuuid, psnu, indicator, time_dreams) %>%
+      group_by(fiscal_year, operatingunit, psnuuid, psnu, shortname,
+               indicator, completion, time_dreams) %>%
       summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
       ungroup() %>%
-      select(-{{cols}}) %>%
-      spread(time_dreams, {{pd}}) %>%
-      rowwise() %>%
-      mutate(total = sum(c_across(`13+ months`:`Less than 1 year`), na.rm = TRUE)) %>%
-      mutate(across(`13+ months`:`Less than 1 year`, ~ . / total)) %>%
-      gather(indicator,val,`13+ months`:total)
+      select(-indicator, -{{remv_cols}}) %>%
+      group_by(fiscal_year, operatingunit, psnuuid, psnu, shortname) %>%
+      summarise(
+        total = sum({{sym_curr_pd}}, na.rm = TRUE),
+        ttl_leq12m = sum({{sym_curr_pd}}[time_dreams == "leq12m"], na.rm = TRUE),
+        prp_leq12m = ttl_leq12m / total,
+        ttl_gt12m = sum({{sym_curr_pd}}[time_dreams == "gt12m"], na.rm = TRUE),
+        prp_gt12m = ttl_gt12m / total,
+        ttl_completed_gt12m = sum(
+          {{sym_curr_pd}}[time_dreams == "gt12m" & completion == "completed"],
+          na.rm = TRUE),
+        prp_completed_gt12m = ttl_completed_gt12m / ttl_gt12m,
+      ) %>%
+      ungroup() %>%
+      mutate(across(.cols = starts_with("prp"),
+                    .fns = ~ case_when(
+                      is.nan(.) ~ NA_real_,
+                      TRUE ~ .))) %>%
+      gather(indicator, value, starts_with(c("tot", "ttl", "prp")))
 
-    # Totals
-    totals <- agyw_prev_time %>%
-      filter(indicator %in% c("total_13plus", "completed_13plus")) %>%
-      spread(indicator, val) %>%
-      select(c(psnuuid, total_13plus, completed_13plus))
-
-    # bind all
-    agyw <- rbind(agyw_prev_time, prct_total) %>%
-      full_join(totals, by = "psnuuid")
-
-    return(agyw)
+    return(df_dreams)
   }
 
 
@@ -123,6 +96,10 @@ map_agyw_prevalence <-
            orglevel = "PSNU",
            facet = FALSE) {
 
+    # Reshape data for maps
+    # df_agyw <- df_agyw %>%
+    #   spread(indicator, value)
+
     # Identify Country/OU
     country <- df_agyw %>%
       dplyr::distinct(operatingunit) %>%
@@ -133,9 +110,9 @@ map_agyw_prevalence <-
       filter(operatingunit %in% country, type == "OU")
 
     df_agyw <- spdf %>%
-      filter(operatingunit %in% country, type == orglevel) %>%
+      #filter(operatingunit %in% country, type == orglevel) %>%
       left_join(df_agyw, by = c("uid" = "psnuuid")) %>%
-      filter(indicator == "completed_13plus", !is.na(val))
+      filter(indicator == "prp_completed_gt12m", !is.na(value))
 
     # Map
     agyw_map <- get_basemap(
@@ -146,7 +123,7 @@ map_agyw_prevalence <-
       ) +
       geom_sf(
         data = df_agyw,
-        aes(fill = val, label = completed_13plus),
+        aes(fill = value),
         lwd = .2,
         color = grey10k) +
       geom_sf(
@@ -157,7 +134,7 @@ map_agyw_prevalence <-
       scale_fill_viridis_c(option = "magma",
                            direction = -1,
                            labels = percent_format(accuracy = 1)) +
-      ggtitle("% who completed at least primary package\nafter being in DREAMS 13+ months") +
+      ggtitle("% who completed at least primary package\nafter being in DREAMS for 13+ months") +
       si_style_map() +
       theme(
         legend.position =  "bottom",
@@ -180,10 +157,13 @@ plot_agyw_prevalence <-
 
     # dot-plot
     plot <- df_agyw %>%
-      mutate(label = paste0(shortname, " (", total_13plus, ")")) %>%
-      filter(indicator == "completed_13plus") %>%
-      ggplot(aes(x = reorder(label, val), y = val)) +
-      geom_point(aes(size = total_13plus, fill = val),
+      filter(indicator %in% c("ttl_gt12m", "prp_completed_gt12m")) %>%
+      spread(indicator, value) %>%
+      mutate(label = paste0(shortname, " (", ttl_gt12m, ")")) %>%
+      ggplot(aes(x = reorder(label, prp_completed_gt12m),
+                 y = prp_completed_gt12m)) +
+      geom_point(aes(size = prp_completed_gt12m,
+                     fill = prp_completed_gt12m),
                  color = grey50k,
                  shape = 21,
                  show.legend = F) +
@@ -191,33 +171,41 @@ plot_agyw_prevalence <-
       scale_color_viridis_c(option = "magma",
                             direction = -1,
                             aesthetics = c("fill")) +
+      scale_y_continuous(position = "right",
+                         labels = percent,
+                         limits = c(0, 1),
+                         #breaks = seq(0, 1, 0.5)) +
+                         breaks = c(0, .5, .9, 1)) +
       geom_hline(aes(yintercept = .9),
                  color = "gray70",
-                 size = 0.35,
+                 size = .7,
                  linetype = "dashed",
                  alpha = .8) +
-      scale_y_continuous(position = "right", labels = percent,
-                         limits = c(0, 1),
-                         breaks = seq(0, 1, 0.5)) +
       labs(x = "", y = "") +
       coord_flip() +
       si_style_xgrid() +
-      ggtitle("% who completed at least primary package\nafter being in DREAMS 13+ months")
+      ggtitle("% who completed at least primary package\nafter being in DREAMS for 13+ months")
 
     # Bar charts (overwrite previous)
     if (type == "bars") {
 
-      plot <- df_agyw %>%
-        filter(indicator %in% c("13+ months", "Less than 1 year")) %>%
-        ggplot(
-          aes(x = reorder(shortname, completed_13plus), y = val,
-          fill = factor(indicator,
-                        levels = c("Less than 1 year","13+ months")))) +
-        geom_bar(stat = "identity") +
+      # Reshape data
+      df_agyw <- df_agyw %>%
+        filter(indicator %in% c("total", "prp_gt12m", "prp_completed_gt12m")) %>%
+        spread(indicator, value) %>%
+        mutate(label = paste0(shortname, " (", total, ")"))
+
+      # Plot
+      plot <-  df_agyw %>%
+        ggplot(aes(x = reorder(label, prp_completed_gt12m))) +
+        geom_bar(stat = "identity", aes(y = 1), fill = grey20k) +
+        geom_bar(stat = "identity", aes(y = prp_gt12m), fill = grey40k) +
         scale_fill_manual(values = c(grey20k, grey40k)) +
-        geom_text(data = df_agyw %>% filter(indicator == "13+ months"),
-                  aes(label = percent(val, 1)),
-                  position = position_stack(vjust = 0.75), color = "white") +
+        geom_text(aes(y = prp_gt12m, label = percent(prp_gt12m, 1)),
+                  position = position_stack(vjust = 0),
+                  hjust = "inward",
+                  color = "white",
+                  size = 4) +
         coord_flip() +
         labs(title = "% in DREAMS 13+ months out of \n total beneficaries",
              x = "", y = "") +

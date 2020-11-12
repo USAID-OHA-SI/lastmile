@@ -257,7 +257,8 @@ get_basemap <-
         geom_sf(
           data = df_geo1,
           fill = "NA",
-          linetype = "dotted"
+          linetype = "dotted",
+          size = .5
         )
     }
 
