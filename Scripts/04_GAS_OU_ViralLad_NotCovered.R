@@ -189,9 +189,6 @@ file_psnu_im <- list.files(
 ## MER PSNU Data
 df_psnu <- vroom(file_psnu_im)
 
-df_psnu %>% glimpse()
-
-
 ## OUs
 df_ous <- df_psnu %>%
   distinct(operatingunit, operatingunituid) %>%
@@ -220,9 +217,8 @@ df_psnus <- df_psnu %>%
   distinct(operatingunit, countryname, snu1, snu1uid, psnu, psnuuid) %>%
   arrange(operatingunit, countryname, snu1, psnu)
 
+
 df_psnus %>% View()
-
-
 
 ## List of Distinct Orgs
 
@@ -277,86 +273,21 @@ df_tx_ml <- extract_tx_ml(df_msd = df_psnu,
                           rep_pd = 3)
 
 
-# df_tx_ml <- df_psnu %>%
-#   filter(
-#     fiscal_year == rep_fy,
-#     fundingagency %in% c("USAID", "HHS/CDC"),
-#     indicator %in% c("TX_ML"),
-#     standardizeddisaggregate %in% c("Age/Sex/ARTNoContactReason/HIVStatus"),
-#     operatingunituid %in% lst_ouuid,
-#     typemilitary == 'N'
-#   ) %>%
-#   mutate(
-#     fundingagency = if_else(fundingagency == "HHS/CDC", "CDC", fundingagency),
-#     otherdisaggregate = str_remove(otherdisaggregate, "No Contact Outcome - "),
-#     tx_badevents = case_when(
-#       otherdisaggregate %in% c(
-#         "Died",
-#         "Lost to Follow-Up <3 Months Treatment",
-#         "Lost to Follow-Up 3+ Months Treatment",
-#         "Refused Stopped Treatment"
-#       ) ~ "Bad events",
-#       TRUE ~ NA_character_
-#     )
-#   ) %>%
-#   filter(!is.na(tx_badevents) & indicator == "TX_ML") %>%
-#   group_by(operatingunit,
-#            snu1,
-#            snu1uid,
-#            psnu,
-#            psnuuid,
-#            indicator,
-#            tx_badevents,
-#            fundingagency) %>%
-#   summarize_at(vars(targets:cumulative), sum, na.rm = TRUE) %>%
-#   ungroup() %>%
-#   dplyr::select(-(targets:qtr4), TX_ML_bad = cumulative,-indicator,-tx_badevents)
+# TX_PLP
 
-
-df_tx <- df_psnu %>%
-  filter(
-    fiscal_year == rep_fy,
-    fundingagency %in% c("USAID", "HHS/CDC"),
-    indicator %in% c("TX_CURR", "TX_NEW", "TX_RTT"),
-    standardizeddisaggregate %in% c("Total Numerator")
-  ) %>%
-  mutate(
-    fundingagency = if_else(
-      fundingagency == "HHS/CDC",
-      "CDC",
-      fundingagency),
-    operatingunituid %in% lst_ouuid
-  ) %>%
-  group_by(fiscal_year,
-           operatingunit,
-           psnuuid,
-           psnu,
-           indicator,
-           fundingagency) %>%
-  summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
-  ungroup() %>%
-  reshape_msd() %>%
-  filter(str_detect(period, "q2|q3")) %>%
-  filter(period == "fy2020q3" |
-           (period == "fy2020q2" & indicator == "TX_CURR")) %>%
-  mutate(period = case_when(period == "fy2020q2" ~ "Q2",
-                            period == "fy2020q3" ~ "Q3")) %>%
-  pivot_wider(names_from = c(indicator, period),
-              values_from = val) %>%
-  rowwise() %>%
-  mutate(TX_BADEVENTS_DENOM = sum(TX_CURR_Q2, TX_NEW_Q3, TX_RTT_Q3, na.rm = T))
-
-
-df_tx_bad <- df_tx %>%
-  left_join(df_tx_ml,
-            by = c("operatingunit", "psnuuid", "psnu", "fundingagency")) %>%
-  mutate(TX_ML_PLP = round((TX_ML_bad / TX_BADEVENTS_DENOM), digits = 3))
+df_tx_bad <- extract_tx_plp(
+  df_msd = df_psnu,
+  rep_agency = c("USAID", "NIH/CDC"),
+  rep_fy = rep_fy,
+  rep_pd = rep_qtr
+)
 
 # Test calculations/results
 df_tx_bad %>%
   filter(operatingunit == "Zambia") %>%
   group_by(psnu) %>%
   summarise(sum = (TX_ML_PLP))
+
 
 ## PEPFAR OU/Countries
 
@@ -375,9 +306,9 @@ terr <- get_raster(terr_path = dir_terr)
 
 spdf_pepfar <- build_spdf(df_psnu = df_psnu)
 
-spdf_pepfar %>%
-  st_set_geometry(NULL) %>%
-  prinf()
+# spdf_pepfar %>%
+#   st_set_geometry(NULL) %>%
+#   prinf()
 
 
 # VIZ --------------------------------------
@@ -495,17 +426,16 @@ map_peds_viralloads(
 )
 
 # Generic Test
-
 map_generic(
   spdf = spdf_pepfar,
-  df = df_eid,
+  df_gen = df_eid,
   mapvar = eid_cov_under2,
   cntry = cname,
   terr_raster = terr,
   agency = T,
   facet_rows = 2,
   save = TRUE,
-  four_parts = F
+  four_parts = T
 )
 
 
@@ -525,7 +455,7 @@ map_vlc_eid(
 
 map_generic(
   spdf = spdf_pepfar,
-  df = df_tx_bad,
+  df_gen = df_tx_bad,
   mapvar = TX_ML_PLP,
   cntry = cname,
   terr_raster = terr,
@@ -548,10 +478,11 @@ map_ous <- df_vl %>%
   distinct(operatingunit) %>%
   pull()
 
-
+## Single Maps
+##
 ## VLS
 map_ous %>%
-  nth(2) %>%
+  nth(1) %>%
   map(.x, .f = ~ map_viralload(
       spdf = spdf_pepfar,
       df = df_vl_usaid ,
@@ -576,7 +507,6 @@ map_ous %>%
 
 ## VLnC
 map_ous %>%
-  nth(11) %>%
   map(.x, .f = ~ map_viralload(
       spdf = spdf_pepfar,
       df = df_vl_usaid,
@@ -588,7 +518,7 @@ map_ous %>%
   )
 
 
-## ALL
+## Batch: ALL by Agency
 map_ous %>%
   map(.x, .f = ~ map_viralloads(
       spdf = spdf_pepfar,
@@ -601,7 +531,7 @@ map_ous %>%
     )
   )
 
-## PEDS ALL
+## Batch: PEDS ALL
 map_ous %>%
   map(.x, .f = ~ map_peds_viralloads(
       spdf = spdf_pepfar,
@@ -616,14 +546,14 @@ map_ous %>%
 ## VL + EID Coverage
 map_ous <- df_eid %>%
   filter(!str_detect(operatingunit, " Region$"),
-         !operatingunit %in% c("none")) %>%
+         !operatingunit %in% c("none"),
+         !is.na(eid_cov_under2)) %>%
   distinct(operatingunit) %>%
   pull()
 
 
-# Batch
+# Batch: VL PEDS  & EID Coverage
 map_ous %>%
-  nth(13) %>%
   map(.x, .f = ~ map_vlc_eid(
       spdf = spdf_pepfar,
       df = df_vl_u15,
@@ -637,11 +567,43 @@ map_ous %>%
   )
 
 
-# Dot plot / bar graph to go with map
-tx_graph(spdf_pepfar, df_tx_bad, TX_ML_PLP, "Kenya")
 
-# Batch Patient Loss Proxy Maps + graphs
-tx_batch(cname = "Nigeria", save = TRUE)
+
+# Batch: TX_ML_PLP map
+
+df_tx_bad %>%
+  filter(!str_detect(operatingunit, " Region$"),
+         !is.na(TX_ML_PLP)) %>%
+  distinct(operatingunit) %>%
+  pull() %>%
+  nth(11) %>%
+  map(.x, .f = ~ tx_graph(
+    spdf = spdf_pepfar,
+    df_gph = df_tx_bad,
+    mapvar = TX_ML_PLP,
+    cntry = .x
+  ))
+
+
+df_tx_bad %>%
+  filter(!str_detect(operatingunit, " Region$"),
+         !is.na(TX_ML_PLP)) %>%
+  distinct(operatingunit) %>%
+  pull() %>%
+  #nth(24) %>% #Zambia
+  map(.x, .f = ~ tx_batch(
+    spdf = spdf_pepfar,
+    df_gen = df_tx_bad,
+    mapvar = TX_ML_PLP,
+    cntry = .x,
+    rep_pd = rep_pd,
+    terr_raster = terr,
+    save = TRUE,
+    agency = TRUE,
+    facet_rows = 1,
+    gen_title = "",
+    four_parts = TRUE)
+  )
 
 
 

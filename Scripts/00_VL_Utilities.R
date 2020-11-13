@@ -4,6 +4,7 @@
 ##  PURPOSE: VL-Utilities
 ##  LICENCE: MIT
 ##  DATE:    2020-10-21
+##  UPDATED: 2020-11-12
 
 
 #' @title Viral Load Datasets
@@ -259,20 +260,6 @@ extract_eid_viralload <-
 
     return(df_eid)
   }
-
-
-#' Treatment ML Datasets
-#'
-#' @param df_msd
-#' @param lst_ou
-#' @return VL Datasets
-#'
-extract_tx_ml <-
-  function(df_msd,
-           lst_ou = NULL) {
-
-  }
-
 
 
 #' Map VL S/C/nC
@@ -616,15 +603,16 @@ map_peds_viralloads <-
 
 #' Map generic variables based on data frame
 #'
-#' @param spdf PEPFAR Spatial Data
-#' @param df wrangled VL data frame
-#' @param mapvar variable of interest to map
-#' @param cntry OU Name
+#' @param spdf    PEPFAR Spatial Data
+#' @param df      wrangled VL data frame
+#' @param mapvar  variable of interest to map
+#' @param cntry   OU Name
 #' @param terr_raster RasterLayer
-#' @param save Save the output to ./Graphics folder
+#' @param save    Save the output to ./Graphics folder
 #' @param facet_rows sets the number of facets for multiple agencies
 #' @param gen_title returns a generic title directly passed to map
-#' @param agency if true adds facet wrap to map / owise data are combined
+#' @param agency    if true adds facet wrap to map / owise data are combined
+#' @param four_parts Use 4 parts classification: [0-25, 25-50, 50-75, 75-100]
 #' @return ggplot plot of the map
 #
 
@@ -719,16 +707,17 @@ map_generic <-
       ) +
       labs(title = gen_title)
 
-
     print(theme_map)
-    return(theme_map)
-
 
     # Save output
     if (save == TRUE) {
       ggsave(
-        here("Graphics",
-             paste0(rep_pd, "_", varname, "_", cntry, "_", Sys.Date(), ".png")),
+        here("./Graphics",
+             paste0(rep_pd, "_",
+                    toupper(varname), "_",
+                    toupper(cntry), "_",
+                    Sys.Date(),
+                    ".png")),
         plot = last_plot(),
         scale = 1.2,
         dpi = 400,
@@ -736,6 +725,8 @@ map_generic <-
         height = 7,
         units = "in")
     }
+
+    return(theme_map)
   }
 
 
@@ -775,7 +766,7 @@ map_vlc_eid <-
     facets <- {{facet_rows}}
 
     vlc <- map_viralload(
-      spdf = spdf_pepfar,
+      spdf = df_geo,
       df = df_vl,
       peds = TRUE,
       vl_variable = vl_var,
@@ -788,7 +779,7 @@ map_vlc_eid <-
 
     # step 2 - retrieve EID coverage map
     eid <- map_generic(
-      spdf = spdf_pepfar,
+      spdf = df_geo,
       df_gen = df_oth,
       mapvar = {{mapvar}},
       cntry = country,
@@ -833,133 +824,3 @@ map_vlc_eid <-
       )
     }
   }
-
-
-# Create a bar graph for TX_ML_PLP
-tx_graph <-
-  function(spdf,
-           df_gph,
-           mapvar,
-           cntry) {
-
-    df_geo <- {{spdf}}
-    df <- {{df_gph}}
-    country <- {{cntry}}
-
-    df_geo2 <- df_geo %>%
-      filter(countryname == country, type == "PSNU") %>%
-      left_join(df, by = c("uid" = "psnuuid")) %>%
-      filter(!is.na({{mapvar}})) %>%
-      mutate(
-        psnu_short = case_when(
-          str_detect(psnu.y, " County$") ~  str_replace_all(psnu.y,
-                                                            " County$",
-                                                            ""),
-          str_detect(psnu.y, " District$") ~  str_replace_all(psnu.y,
-                                                              " District$",
-                                                              ""),
-          TRUE ~ psnu.y
-        )
-      )
-
-    p <-  df_geo2 %>%
-      mutate(
-        yorder = tidytext::reorder_within(psnu_short, {{mapvar}}, fundingagency),
-        rank = percent_rank({{mapvar}})
-      ) %>%
-      ggplot(aes(y = {{mapvar}}, x = yorder)) +
-      geom_col(aes(fill = {{mapvar}})) +
-      facet_wrap(~ paste0(fundingagency, "\n"), nrow = 2,scales = "free_y") +
-      coord_flip() +
-      scale_x_reordered() +
-      #scale_fill_identity() +
-      scale_fill_viridis_c(option = "viridis", direction = -1) +
-      scale_y_continuous(labels = percent_format(accuracy = 1)) +
-      si_style_xgrid() +
-      labs(x = NULL, y = NULL) +
-      theme(legend.position = "none",
-            axis.title.y = element_text(margin = margin(t = 0, r = -20)))
-
-    return(p)
-  }
-
-
-#' @title Map TX
-#'
-#' @param cname Country name
-#' @param save Save output of not
-#' return ggplot plot
-#'
-#tx_batch <- function(cname, save = F) {
-tx_batch <- function(spdf,
-                     df_gen,
-                     mapvar,
-                     cntry,
-                     terr_raster,
-                     save = FALSE,
-                     agency = TRUE,
-                     facet_rows = 1,
-                     gen_title = "",
-                     four_parts = TRUE) {
-
-  country <- {{cntry}}
-
-  p1 <- map_generic(
-    spdf = spdf,
-    df_gen = df_gen,
-    mapvar = TX_ML_PLP,
-    cntry = country,
-    terr_raster = terr_raster,
-    agency = agency,
-    facet_rows = 2,
-    save = save,
-    four_parts = four_parts
-  )
-
-  p2 <- tx_graph(
-    spdf = spdf_pepfar,
-    df_gph = df_gen,
-    mapvar = TX_ML_PLP,
-    cntry = country
-  )
-
-  (p1 + p2) +
-    plot_layout(widths = c(1, 1)) +
-    plot_annotation(
-      caption = paste0(
-        "OHA/SIEI - Data Source: MSD ",
-        rep_pd,
-        "_",
-        country,
-        "TX_ML Patient Loss Proxy \n",
-        "TX_ML_PLP = Number not retained on ART (LTFU, Died, Stopped) /
-        (TX_CURR_prev + TX_NEW + TX_RTT) \n",
-        "Produced on ",
-        Sys.Date(),
-        ", Missing data shown in gray on map."
-      ),
-      title = paste0(str_to_upper(country), " TX_ML Patient Loss Proxy")
-    )
-
-  if (save == TRUE) {
-    ggsave(
-      here("Graphics",
-           paste0(
-             rep_pd,
-             "_",
-             "TX_ML_PLP_",
-             country,
-             "_",
-             Sys.Date(),
-             ".png"
-           )
-      ),
-      plot = last_plot(),
-      scale = 1.2,
-      dpi = 400,
-      width = 10,
-      height = 7,
-      units = "in"
-    )
-  }
-}
