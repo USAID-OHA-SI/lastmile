@@ -44,13 +44,23 @@ extract_ovc_coverage <-
         proxy_coverage = case_when(
           OVC_HIVSTAT_POS > 0 ~ OVC_HIVSTAT_POS/TX_CURR
         ),
-        shortname = str_remove(psnu,
-                               " District$|
-                               County$|
-                               District Municipality$|
-                               Metropolitan Municipality$|
-                               Municipality$")) %>%
+        proxy_coverage_max = case_when(
+          proxy_coverage > 1 ~ 1.01,
+          TRUE ~ proxy_coverage
+        ),
+        shortname = str_remove(psnu," District$| County$"),
+        shortname = str_remove(shortname, "District Municipality$"),
+        shortname = str_remove(shortname, "Metropolitan Municipality$"),
+        shortname = str_remove(shortname, "Municipality$")
+      ) %>%
       filter(period == pd, !is.na(proxy_coverage))
+
+    if (nrow(df_proxy_ovc_cov) == 0) {
+      cat(
+        "\n",
+        Wavelength::paint_red(
+          paste0("No OVC Proxy Coverage data available for ", pd)), "\n")
+    }
 
     return(df_proxy_ovc_cov)
   }
@@ -68,8 +78,11 @@ extract_ovc_coverage <-
 map_ovc_coverage <-
   function(spdf, df_ovc, terr_raster,
            orglevel = "PSNU",
-           rep_pd = "FY20Q2",
            facet = FALSE) {
+
+    # Params
+    orglevel <- {{orglevel}}
+    rep_pd <- {{rep_pd}}
 
     # Identify Country/OU
     country <- df_ovc %>%
@@ -80,8 +93,8 @@ map_ovc_coverage <-
     spdf_adm0 <- spdf %>%
       filter(operatingunit %in% country, type == "OU")
 
-    spdf_adm1 <- spdf %>%
-      filter(operatingunit %in% country, type == "SNU1")
+    # spdf_adm1 <- spdf %>%
+    #   filter(operatingunit %in% country, type == "SNU1")
 
     # Append Program data to geo
     spdf_ovc <- spdf %>%
@@ -112,12 +125,7 @@ map_ovc_coverage <-
         option = "magma",
         direction = -1,
         labels = percent
-      ) +
-      ggtitle(
-        label = "",
-        subtitle = paste0(rep_pd,
-                          " | OVC Program Coverage Proxy of TX_CURR <20")
-      ) +
+      )
       si_style_map() +
       theme(
         legend.position = "bottom",
@@ -136,13 +144,31 @@ map_ovc_coverage <-
 #' @return ggplot plot
 #'
 plot_ovc_coverage <-
-  function(df_ovc, country) {
+  function(df_ovc,
+           country = NULL) {
 
-    dotplot <- df_ovc %>%
-      mutate(
-        label = paste0(shortname, " (", OVC_HIVSTAT_POS, "/", TX_CURR, ")")
-      ) %>%
-      ggplot(aes(x = reorder(label, proxy_coverage), y = proxy_coverage)) +
+    # Params
+    cntry <- {{country}}
+
+    # Generate labels
+    df <- df_ovc %>%
+    mutate(
+      label = paste0(shortname, " (", OVC_HIVSTAT_POS, "/", TX_CURR, ")")
+    )
+
+    # Filter by country
+    if (!is.null(cntry)) {
+      df <- df %>%
+        filter(operatingunit %in% {{cntry}})
+    }
+
+    # Identify lowest record
+    low <- df %>%
+      filter(proxy_coverage == min(proxy_coverage))
+
+    # Plot
+    dotplot <- df %>%
+      ggplot(aes(x = reorder(label, proxy_coverage), y = proxy_coverage_max)) +
       geom_point(aes(size = TX_CURR, fill = proxy_coverage),
                  color = grey50k,
                  shape = 21,
@@ -153,26 +179,31 @@ plot_ovc_coverage <-
                             aesthetics = c("fill")) +
       geom_hline(aes(yintercept = .9),
                  color = "gray70",
-                 size = 0.35,
+                 size = .7,
                  linetype = "dashed",
                  alpha = .8) +
-      scale_y_continuous(position = "right", labels = percent) +
+      scale_y_continuous(position = "right",
+                         labels = percent,
+                         #limits = c(0, 1), #
+                         breaks = c(0, .25, .5, .75, 1)) +
       labs(x = "",y = "") +
       coord_flip() +
       annotate(
-        geom = "curve", x = 1.25, y = .65, xend = 1, yend = .33,
-        curvature = .3, arrow = arrow(length = unit(4, "mm")),
+        geom = "curve",
+        x = low$label, y = (low$proxy_coverage_max + .05),
+        xend = low$label, yend = (low$proxy_coverage_max + .01),
+        curvature = -.3, arrow = arrow(length = unit(4, "mm")),
         color = grey50k
       ) +
-      annotate(geom = "text", x = 1, y = .68,
+      annotate(geom = "text",
+               x = low$label, y = (low$proxy_coverage_max + .06),
                label = "Circle Sized by TX_CURR", hjust = "left",
                size = 4, color = grey50k, family = "Gill Sans MT") +
-      annotate(geom = "text", x = 13, y = .88,
+      annotate(geom = "text",
+               x = low$label, y = .89,
                label = "90% threshold", hjust = "right",
                size = 4, color = grey50k, family = "Gill Sans MT") +
-      si_style_nolines()
-
-    print(dotplot)
+      si_style_xgrid()
 
     return(dotplot)
   }
@@ -181,40 +212,58 @@ plot_ovc_coverage <-
 #' Viz OVC Proxy Coverage
 #'
 #' @param spdf PEPFAR Spatial Data
-#' @param df OVC Coverage data
+#' @param df_ovc OVC Coverage data
 #' @param terr_raster RasterLayer
 #' @param cntry OU Name
 #'
-viz_ovc_coverage <- function(spdf, df, terr_raster, cntry, save = FALSE) {
+viz_ovc_coverage <-
+  function(spdf, df_ovc, terr_raster, rep_pd,
+           country = NULL,
+           caption = "",
+           filename = "",
+           save = FALSE) {
 
   # Params
   df_geo <- {{spdf}}
-  df_ovc <- {{df}}
+  df <- {{df_ovc}}
   terr <- {{terr_raster}}
-  country <- {{cntry}}
+  pd <- {{rep_pd}}
+  cntry <- {{country}}
+  caption <- {{caption}}
+  fname <- {{filename}}
   sgraph <- {{save}}
 
+  # Filter data by country / OU
+  if (!is.null(cntry)) {
+    df <- df %>%
+      filter(operatingunit == cntry)
+  }
+
   # Map
-  map <- map_ovc_coverage(df_geo, df_ovc, terr, country)
+  map <- map_ovc_coverage(df_geo, df, terr)
 
   # graph
-  viz <- plot_ovc_coverage(df_ovc, country)
+  viz <- plot_ovc_coverage(df)
 
   # VIZ COMBINED & SAVED
   graph <- (map + viz) +
     plot_layout(nrow = 1) +
     plot_annotation(
-      title = "FY20Q2 | OVC Program Coverage Proxy of TX_CURR (Under 20yo)",
-      subtitle = "The size of circles represents the volume of TX_CURR",
-      caption = get_caption(country)
-    )
+      title = paste0(pd, " | OVC Program Coverage Proxy of TX_CURR (Under 20yo)"),
+      subtitle = "The size of circles represents the volume of TX_CURR and the color represents the % coverage",
+      caption = caption
+    ) +
+    theme(text = element_text(family = "Gill Sans MT"))
 
-  print(graph)
+  # Save plot
+  if (sgraph == TRUE & endsWith(tolower(fname), ".png")) {
+    print(graph)
 
-  if (sgraph == TRUE) {
-    ggsave(here("Graphics", get_output_name(country)),
+    ggsave(here("Graphics", fname),
            scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
   }
+
+
 
   return(graph)
 }
