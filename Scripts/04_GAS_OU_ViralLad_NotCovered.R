@@ -533,12 +533,29 @@ map_ous %>%
 
 ## Batch: PEDS ALL
 map_ous %>%
+  nth(24) %>%
   map(.x, .f = ~ map_peds_viralloads(
       spdf = spdf_pepfar,
       df = df_vl_u15,
       cntry = .x,
       terr_raster = terr,
-      save = TRUE
+      save = TRUE,
+      agency = FALSE
+    )
+  )
+
+
+## Batch: PEDS by Agency
+map_ous %>%
+  nth(24) %>%
+  map(.x, .f = ~ map_peds_viralloads(
+      spdf = spdf_pepfar,
+      df = df_vl_u15,
+      cntry = .x,
+      terr_raster = terr,
+      save = F,
+      agency = TRUE,
+      facet_rows = 2
     )
   )
 
@@ -602,7 +619,7 @@ df_tx_bad %>%
     agency = TRUE,
     facet_rows = 1,
     gen_title = "",
-    four_parts = TRUE)
+    four_parts = F)
   )
 
 

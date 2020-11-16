@@ -9,7 +9,6 @@
 #' @title Extract OVC Proxy Coverage data
 #'
 #' @param df_msd Dataframe of MSD PSNU IM
-#' @param country Operatingunit name (Single OU or list)
 #' @param rep_fy Reporting Fiscal Year
 #' @param rep_agency Reporting / Funding Agency
 #' @param rep_pd Reporting Period (eg: FY20Q2)
@@ -17,37 +16,40 @@
 #'
 extract_ovc_coverage <-
   function(df_msd,
-           country = "Zambia",
            rep_fy = 2020,
            rep_agency = "USAID",
            rep_pd = "FY20Q2") {
 
     # All Params
-    cntry <- {{country}}
     fy <- {{rep_fy}}
     agency <- {{rep_agency}}
     pd <- {{rep_pd}}
 
     # Filter and Calculate Proxy Coverage
-    df_proxy_ovc_cov <- df %>%
+    df_proxy_ovc_cov <- df_msd %>%
       filter(fiscal_year == fy,
              fundingagency %in% agency,
              indicator == "OVC_HIVSTAT_POS" &
                standardizeddisaggregate == "Total Numerator" |
                indicator == "TX_CURR" &
-               standardizeddisaggregate == "Age/Sex/HIVStatus",
-             operatingunit %in% cntry) %>%
+               standardizeddisaggregate == "Age/Sex/HIVStatus") %>%
       filter(!trendsfine %in% c("20-24","25-29","30-34","35-39","40-49","50+")) %>%
       group_by(fiscal_year,operatingunit,psnuuid,psnu,indicator) %>%
       summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
       ungroup() %>%
       reshape_msd(clean = TRUE) %>%
-      select(-period_type) %>%
+      dplyr::select(-period_type) %>%
       spread(indicator, val) %>%
-      mutate(proxy_coverage = case_when(
-        OVC_HIVSTAT_POS > 0 ~ OVC_HIVSTAT_POS/TX_CURR
-      ),
-      shortname = str_remove(psnu, "District")) %>%
+      mutate(
+        proxy_coverage = case_when(
+          OVC_HIVSTAT_POS > 0 ~ OVC_HIVSTAT_POS/TX_CURR
+        ),
+        shortname = str_remove(psnu,
+                               " District$|
+                               County$|
+                               District Municipality$|
+                               Metropolitan Municipality$|
+                               Municipality$")) %>%
       filter(period == pd, !is.na(proxy_coverage))
 
     return(df_proxy_ovc_cov)
@@ -64,7 +66,7 @@ extract_ovc_coverage <-
 #' @return ggplot plot
 #'
 map_ovc_coverage <-
-  function(spdf, terr, df_ovc,
+  function(spdf, df_ovc, terr_raster,
            orglevel = "PSNU",
            rep_pd = "FY20Q2",
            facet = FALSE) {
@@ -130,10 +132,11 @@ map_ovc_coverage <-
 #' @title Plot OVC Proxy Coverage
 #'
 #' @param df_ovc OVC Datasets
+#' @param country country name
 #' @return ggplot plot
 #'
 plot_ovc_coverage <-
-  function(df_ovc) {
+  function(df_ovc, country) {
 
     dotplot <- df_ovc %>%
       mutate(
@@ -170,4 +173,48 @@ plot_ovc_coverage <-
       si_style_nolines()
 
     print(dotplot)
+
+    return(dotplot)
   }
+
+
+#' Viz OVC Proxy Coverage
+#'
+#' @param spdf PEPFAR Spatial Data
+#' @param df OVC Coverage data
+#' @param terr_raster RasterLayer
+#' @param cntry OU Name
+#'
+viz_ovc_coverage <- function(spdf, df, terr_raster, cntry, save = FALSE) {
+
+  # Params
+  df_geo <- {{spdf}}
+  df_ovc <- {{df}}
+  terr <- {{terr_raster}}
+  country <- {{cntry}}
+  sgraph <- {{save}}
+
+  # Map
+  map <- map_ovc_coverage(df_geo, df_ovc, terr, country)
+
+  # graph
+  viz <- plot_ovc_coverage(df_ovc, country)
+
+  # VIZ COMBINED & SAVED
+  graph <- (map + viz) +
+    plot_layout(nrow = 1) +
+    plot_annotation(
+      title = "FY20Q2 | OVC Program Coverage Proxy of TX_CURR (Under 20yo)",
+      subtitle = "The size of circles represents the volume of TX_CURR",
+      caption = get_caption(country)
+    )
+
+  print(graph)
+
+  if (sgraph == TRUE) {
+    ggsave(here("Graphics", get_output_name(country)),
+           scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
+  }
+
+  return(graph)
+}

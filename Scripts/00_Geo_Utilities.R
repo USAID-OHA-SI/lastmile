@@ -134,6 +134,80 @@ build_spdf <-
   }
 
 
+#' Append attributes to PEPFAR Geodata
+#'
+#' @param spdf
+#' @param df_ous
+#' @param df_snus
+#' @param df_psnus
+#' @return spdf with lebels (type) and other details
+#'
+append_attributes <- function(spdf, df_ous, df_snus, df_psnus){
+
+  # Get params
+  spdf_pepfar <- {{spdf}}
+  ous <- {{df_ous}}
+  snus <- {{df_snus}}
+  psnus <- {{df_psnus}}
+
+  ## Geo - identify ous
+  spdf_pepfar <- spdf_pepfar %>%
+    left_join(ous, by = "uid")
+
+  ## Geo - identify snu1
+  spdf_pepfar <- spdf_pepfar %>%
+    left_join(snus, by = c("uid" = "snu1uid")) %>%
+    rename(countryname = countryname.x) %>%
+    mutate(
+      type = case_when(
+        is.na(type) & !is.na(operatingunit) ~ "SNU1",
+        TRUE ~ type
+      ),
+      countryname = case_when(
+        is.na(countryname) & type == "SNU1" ~ countryname.y,
+        TRUE ~ countryname
+      )
+    ) %>%
+    dplyr::select(-countryname.y)
+
+  ## Geo - identify psnu
+  spdf_pepfar <- spdf_pepfar %>%
+    left_join(psnus, by = c("uid" = "psnuuid")) %>%
+    rename(
+      countryname = countryname.x,
+      operatingunit = operatingunit.x,
+      snu1 = snu1.x
+    ) %>%
+    mutate(
+      type = case_when(
+        is.na(type) & !is.na(operatingunit.y) ~ "PSNU",
+        TRUE ~ type
+      ),
+      countryname = case_when(
+        is.na(countryname) & type == "PSNU" ~ countryname.y,
+        TRUE ~ countryname
+      ),
+      operatingunit = case_when(
+        is.na(operatingunit) & type == "PSNU" ~ operatingunit.y,
+        TRUE ~ operatingunit
+      ),
+      snu1 = case_when(
+        is.na(snu1) & type == "PSNU" ~ snu1.y,
+        TRUE ~ snu1
+      ),
+      type = case_when(
+        !is.na(snu1uid) & uid == snu1uid & type == "SNU1" ~ "PSNU",
+        TRUE ~ type
+      )
+    ) %>%
+    dplyr::select(-ends_with(".y"))
+
+  ## Return geodata
+
+  return(spdf_pepfar)
+}
+
+
 #' @title Get Terrain Raster dataset
 #'
 #' @param terr_path path to terrain raster file
