@@ -12,7 +12,7 @@
 #' @param rep_fy Reporting Fiscal Year
 #' @param rep_agency Reporting / Funding Agency
 #' @param rep_pd Reporting Period (eg: FY20Q2)
-#' @return
+#' @return df
 #'
 extract_ovc_coverage <-
   function(df_msd,
@@ -63,6 +63,79 @@ extract_ovc_coverage <-
     }
 
     return(df_proxy_ovc_cov)
+  }
+
+
+#' @title Extract OVC Proxy Coverage data
+#'
+#' @param df_msd Dataframe of MSD PSNU IM
+#' @param rep_fy Reporting Fiscal Year
+#' @param rep_agency Reporting / Funding Agency
+#' @param rep_pd Reporting Period (eg: FY20Q2)
+#' @return df
+#'
+extract_ovc_tx_overlap <-
+  function(df_msd,
+           rep_fy = 2020,
+           rep_agency = c("USAID","HHS/CDC")) {
+
+    # All Params
+    fy <- {{rep_fy}}
+    agencies <- {{rep_agency}}
+
+    # Summarise data by psnu / indicator
+    df <- df_psnu %>%
+      filter(
+        fiscal_year == fy,
+        indicator == "OVC_SERV_UNDER_18" &
+          standardizeddisaggregate == "Total Numerator" |
+        indicator == "TX_CURR" &
+          standardizeddisaggregate == "Age/Sex/HIVStatus",
+        fundingagency %in% agencies,
+        !trendsfine %in% c("20-24","25-29","30-34","35-39","40-49","50+")
+      ) %>%
+      mutate(
+        fundingagency = case_when(
+          fundingagency == "HHS/CDC" ~ "CDC",
+          TRUE ~ fundingagency
+        )
+      ) %>%
+      group_by(fiscal_year, fundingagency, operatingunit,
+               psnuuid, psnu, indicator) %>%
+      #summarise(across(starts_with("targ"), sum, na.rm = TRUE)) %>%
+      summarise(targets = sum(as.integer(targets), na.rm = TRUE)) %>%
+      ungroup() %>%
+      reshape_msd(clean = TRUE) %>%
+      dplyr::select(-period_type)
+
+    # Calculate agency's presence by psnu
+    # # of inidicator x agency x psnu
+    df_ovc_mix <- df %>%
+      group_by(psnuuid) %>%
+      count(fundingagency) %>%
+      spread(fundingagency, n)
+
+    #
+    df <- df %>%
+      rename(targets = val) %>%
+      left_join(df_ovc_mix, by = "psnuuid") %>%
+      mutate(
+        ovc_group = case_when(
+          CDC > 0 & USAID > 0 ~ "Mixed",
+          CDC > 1 & is.na(USAID) ~ "CDC Only",
+          USAID > 1 & is.na(CDC) ~ "USAID Only",
+          CDC < 2  & is.na(USAID) ~ "OVC & TX do not overlap in this district",
+          USAID < 2  & is.na(CDC) ~ "OVC & TX do not overlap in this district"
+        ),
+        ovc_group = factor(
+          ovc_group,
+          levels = c("USAID Only", "CDC Only", "Mixed",
+                     "OVC & TX do not overlap in this district"))
+      )
+
+    glimpse(df)
+
+    return(df)
   }
 
 
@@ -266,4 +339,37 @@ viz_ovc_coverage <-
 
 
   return(graph)
-}
+  }
+
+
+#' Plot OVC & TX Heatmap
+#'
+heatmap_ovc_tx <-
+  function(df) {
+
+    # Heatmap
+    heatmap <- df %>%
+      filter(ovc_group == "Mixed") %>%
+      mutate(
+        fundingagency = factor(fundingagency, levels = c("USAID", "CDC"))
+      ) %>%
+      ggplot(aes(x = fundingagency,
+                 y = reorder(psnu, targets),
+                 fill = fundingagency)) +
+      geom_tile(color = grey20k, alpha = .6) +
+      geom_text(aes(label = comma(targets))) +
+      scale_fill_manual(values = c(USAID_mgrey, USAID_lgrey),
+                        na.translate = TRUE, na.value = "red") +
+      xlab(label = "") +
+      ylab(label = "") +
+      facet_wrap(~indicator) +
+      ggtitle(label = "Summary of PSNUs with Mixed Agency Targets") +
+      si_style_xline() +
+      theme(legend.position = "none",
+            plot.title = element_text(family = "Gill Sans MT", size = 10),
+            axis.text = element_text(family = "Gill Sans MT"),
+            strip.text = element_text(family = "Gill Sans MT", hjust = .5),
+            panel.spacing.x = unit(-1, "lines"))
+
+    return(heatmap)
+  }

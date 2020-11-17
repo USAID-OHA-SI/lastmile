@@ -3,6 +3,7 @@
 ##  PURPOSE: Geo-depiction of VL - % not covered
 ##  LICENCE: MIT
 ##  DATE:    2020-09-04
+##  UPDATED: 2020-11-16
 
 # Libraries
 library(tidyverse)
@@ -43,11 +44,11 @@ dir_merdata <- "../../MERDATA"
 
 ## Q3 MER Data
 
-psnu_im <- "^MER_.*_PSNU_IM_.*_20200814_.*.zip$"
+psnu_im <- "^MER_.*_PSNU_IM_.*_20200918_.*.zip$"
 
 ## Reporting Filters
-
 rep_agency = "USAID"
+rep_agencies <- c("USAID", "HHS/CDC")
 
 rep_fy = 2020
 rep_qtr = 2 # Data available for Q2 & 4
@@ -129,6 +130,16 @@ get_output_name <- function(country,
 
 # DATA --------------------------------------------------------------
 
+    ## Geodata
+
+    ## Terrain Raster
+    terr <- get_raster(terr_path = dir_terr)
+
+    ## ORGs
+    spdf_pepfar <- build_spdf(dir_geo = dir_geodata, df_psnu = df_psnu)
+
+    ## MSD
+
     ## File path + name
     file_psnu_im <- list.files(
             path = dir_merdata,
@@ -140,7 +151,8 @@ get_output_name <- function(country,
         last()
 
     ## MER PSNU Data
-    df_psnu <- vroom(file_psnu_im)
+    df_psnu <- vroom(file_psnu_im, col_types = c(.default = "c"))
+
 
     ## MER Data Munging
 
@@ -150,20 +162,18 @@ get_output_name <- function(country,
                                        rep_agency = rep_agency,
                                        rep_pd = rep_pd)
 
-    ## Geodata
 
-    ## Terrain Raster
-    terr <- get_raster(terr_path = dir_terr)
-
-    ## ORGs
-    spdf_pepfar <- build_spdf(dir_geo = dir_geodata, df_psnu = df_psnu)
-
+    ## OVC & TX Overlap
+    df_ovc_tx <- extract_ovc_tx_overlap(df_msd = df_psnu,
+                                        rep_fy = rep_fy + 1,
+                                        rep_agency = rep_agencies)
 
 
 # VIZ --------------------------------------
 
-    ## Test Individual OVC maps
+    ## Test OVC  Proxy Cov maps
     cname <- "Zambia"
+    cname <- "Zimbabwe"
 
     df_cntry <- df_ovc_cov %>% filter(operatingunit == cname)
 
@@ -188,7 +198,6 @@ get_output_name <- function(country,
     df_ovc_cov %>%
         distinct(operatingunit) %>%
         pull() %>%
-        #nth(3) %>% #DRC
         map(.x, .f = ~ viz_ovc_coverage(spdf = spdf_pepfar,
                                         df_ovc = df_ovc_cov,
                                         terr_raster = terr,
@@ -199,7 +208,17 @@ get_output_name <- function(country,
                                         save = T))
 
 
+    # Test OVC x TX Overlap
 
+    cntries <- df_ovc_tx %>%
+        filter(!str_detect(operatingunit, " Region$")) %>%
+        distinct(operatingunit) %>%
+        pull()
+
+    df_cntry <- df_ovc_tx %>%
+        filter(operatingunit == cntries %>% nth(24))
+
+    heatmap_ovc_tx(df = df_cntry)
 
 
 
