@@ -58,7 +58,7 @@ zam1 <- get_adm_boundaries("ZMB", adm_level = 1, geo_path = dir_geo) %>%
 proxy_ovc_cov<-df %>%
   filter(fiscal_year=="2020",
          indicator =="OVC_HIVSTAT_POS" & standardizeddisaggregate=="Total Numerator" |
-         indicator=="TX_CURR" & standardizeddisaggregate=="Age/Sex/HIVStatus",
+           indicator=="TX_CURR" & standardizeddisaggregate=="Age/Sex/HIVStatus",
          operatingunit %in% c("Zambia")) %>%
   filter(!trendsfine %in% c("20-24","25-29","30-34","35-39","40-49","50+"),
          !str_detect(psnu,"_Military")) %>%
@@ -75,12 +75,14 @@ proxy_ovc_cov<-df %>%
   spread(indicator, val) %>%
   rowwise() %>%
   mutate(TX_CURR=sum(c_across(TX_CURR_CDC:TX_CURR_USAID),na.rm = TRUE)) %>%
-  mutate(proxy_coverage_USAID=case_when(
-    OVC_HIVSTAT_POS_USAID >0 ~ OVC_HIVSTAT_POS_USAID/TX_CURR),
+  mutate(flag=case_when(
+    OVC_HIVSTAT_POS_USAID >0 & OVC_HIVSTAT_POS_CDC >0 ~ "mixed agency ovc"),
+    proxy_coverage_USAID=case_when(
+      OVC_HIVSTAT_POS_USAID >0 ~ OVC_HIVSTAT_POS_USAID/TX_CURR),
     proxy_coverage_CDC=case_when(
       OVC_HIVSTAT_POS_CDC >0 ~ OVC_HIVSTAT_POS_CDC/TX_CURR
     ),
-  shortname=str_remove(psnu, "District")) %>%
+    shortname=str_remove(psnu, "District")) %>%
   filter(period=="FY20Q2")
 
 
@@ -112,6 +114,7 @@ zam_map_cov20<-terrain_map(countries = "Zambia", terr_path = dir_terr, mask = TR
 # Plot
 dotplot <- proxy_ovc_cov %>%
   filter(proxy_coverage_USAID >0) %>%
+  filter(proxy_coverage_USAID >0, is.na(flag)) %>%
   mutate(label = paste0(shortname, " (", OVC_HIVSTAT_POS_USAID, "/", TX_CURR, ")")) %>%
   ggplot2::ggplot(
     aes(x = reorder(label, proxy_coverage_USAID),
@@ -141,6 +144,7 @@ dotplot <- proxy_ovc_cov %>%
            size=4, color=grey50k, family="Source Sans Pro")+
   si_style_nolines()
 
+
 print(dotplot)
 
 
@@ -151,8 +155,9 @@ print(dotplot)
   plot_annotation(
     title="",
     caption = "*NOTE: Scales are truncated to 100%
-    Source: FY20Q3i MSD - USAID Only,
-Proxy Coverage=OVC_HIV_STAT_POS USAID/TX_CURR age <20 All Agencies",
+    Source: FY20Q3i MSD,
+Proxy Coverage=OVC_HIV_STAT_POS USAID/TX_CURR age <20 All Agencies
+Shown for PSNUs in which USAID is the only agengy with OVC programming",
     theme=theme(plot.caption = element_text(size=9, color=grey70k, family="Source Sans Pro"))) #under 20
 
 
