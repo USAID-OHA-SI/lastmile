@@ -102,7 +102,6 @@ extract_ovc_tx_overlap <-
       ) %>%
       group_by(fiscal_year, fundingagency, operatingunit,
                psnuuid, psnu, indicator) %>%
-      #summarise(across(starts_with("targ"), sum, na.rm = TRUE)) %>%
       summarise(targets = sum(as.integer(targets), na.rm = TRUE)) %>%
       ungroup() %>%
       reshape_msd(clean = TRUE) %>%
@@ -124,8 +123,8 @@ extract_ovc_tx_overlap <-
           CDC > 0 & USAID > 0 ~ "Mixed",
           CDC > 1 & is.na(USAID) ~ "CDC Only",
           USAID > 1 & is.na(CDC) ~ "USAID Only",
-          CDC < 2  & is.na(USAID) ~ "OVC & TX do not overlap in this district",
-          USAID < 2  & is.na(CDC) ~ "OVC & TX do not overlap in this district"
+          CDC < 2 & is.na(USAID) ~ "OVC & TX do not overlap in this district",
+          USAID < 2 & is.na(CDC) ~ "OVC & TX do not overlap in this district"
         ),
         ovc_group = factor(
           ovc_group,
@@ -296,68 +295,76 @@ viz_ovc_coverage <-
            filename = "",
            save = FALSE) {
 
-  # Params
-  df_geo <- {{spdf}}
-  df <- {{df_ovc}}
-  terr <- {{terr_raster}}
-  pd <- {{rep_pd}}
-  cntry <- {{country}}
-  caption <- {{caption}}
-  fname <- {{filename}}
-  sgraph <- {{save}}
+    # Params
+    df_geo <- {{spdf}}
+    df <- {{df_ovc}}
+    terr <- {{terr_raster}}
+    pd <- {{rep_pd}}
+    cntry <- {{country}}
+    caption <- {{caption}}
+    fname <- {{filename}}
+    sgraph <- {{save}}
 
-  # Filter data by country / OU
-  if (!is.null(cntry)) {
-    df <- df %>%
-      filter(operatingunit == cntry)
+    # Filter data by country / OU
+    if (!is.null(cntry)) {
+      df <- df %>%
+        filter(operatingunit == cntry)
+    }
+
+    # Map
+    map <- map_ovc_coverage(df_geo, df, terr)
+
+    # graph
+    viz <- plot_ovc_coverage(df)
+
+    # VIZ COMBINED & SAVED
+    graph <- (map + viz) +
+      plot_layout(nrow = 1) +
+      plot_annotation(
+        title = paste0(pd, " | OVC Program Coverage Proxy of TX_CURR (Under 20yo)"),
+        subtitle = "The size of circles represents the volume of TX_CURR and the color represents the % coverage",
+        caption = caption
+      ) +
+      theme(text = element_text(family = "Gill Sans MT"))
+
+    # Save plot
+    if (sgraph == TRUE & endsWith(tolower(fname), ".png")) {
+
+      print(graph)
+
+      ggsave(here("Graphics", fname),
+             scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
+    }
+
+
+    return(graph)
   }
 
-  # Map
-  map <- map_ovc_coverage(df_geo, df, terr)
-
-  # graph
-  viz <- plot_ovc_coverage(df)
-
-  # VIZ COMBINED & SAVED
-  graph <- (map + viz) +
-    plot_layout(nrow = 1) +
-    plot_annotation(
-      title = paste0(pd, " | OVC Program Coverage Proxy of TX_CURR (Under 20yo)"),
-      subtitle = "The size of circles represents the volume of TX_CURR and the color represents the % coverage",
-      caption = caption
-    ) +
-    theme(text = element_text(family = "Gill Sans MT"))
-
-  # Save plot
-  if (sgraph == TRUE & endsWith(tolower(fname), ".png")) {
-    print(graph)
-
-    ggsave(here("Graphics", fname),
-           scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
-  }
-
-
-
-  return(graph)
-  }
 
 
 #' Plot OVC & TX Heatmap
 #'
-heatmap_ovc_tx <-
-  function(df) {
+#' @param df OVC vs TX DataFrame
+#' @return ggplot plot
+#'
+heatmap_ovctx_coverage <- function(df) {
 
     # Heatmap
+    df <- df %>%
+      filter(ovc_group == "Mixed")
+
+    print(df %>% distinct(operatingunit) %>% pull())
+
+    if (nrow(df) == 0) return(NULL)
+
     heatmap <- df %>%
-      filter(ovc_group == "Mixed") %>%
-      mutate(
-        fundingagency = factor(fundingagency, levels = c("USAID", "CDC"))
-      ) %>%
+      mutate(fundingagency = factor(fundingagency, levels = c("USAID", "CDC")),
+             targets = as.integer(targets)) %>%
       ggplot(aes(x = fundingagency,
                  y = reorder(psnu, targets),
                  fill = fundingagency)) +
       geom_tile(color = grey20k, alpha = .6) +
-      geom_text(aes(label = comma(targets))) +
+      geom_text(aes(label = comma(targets, accuracy = 1))) +
       scale_fill_manual(values = c(USAID_mgrey, USAID_lgrey),
                         na.translate = TRUE, na.value = "red") +
       xlab(label = "") +
@@ -372,4 +379,179 @@ heatmap_ovc_tx <-
             panel.spacing.x = unit(-1, "lines"))
 
     return(heatmap)
+  }
+
+
+
+#' Map OVC & TX Coverage
+#'
+#' @param spdf
+#' @param df_ovctx
+#' @param terr_raster
+#' @return
+#'
+map_ovctx_coverage <-
+  function(spdf, df_ovctx, terr_raster) {
+
+  country <- df_ovctx %>%
+    distinct(operatingunit) %>%
+    pull()
+
+  # Geodata
+  spdf_adm0 <- spdf %>%
+    filter(operatingunit %in% country, type == "OU")
+
+  # Append Program data to geo
+  spdf_ovctx <- spdf %>%
+    filter(operatingunit %in% country, type == "PSNU") %>%
+    left_join(df_ovctx, by = c("uid" = "psnuuid")) %>%
+    filter(!is.na(ovc_group)) %>%
+    mutate(ovc_colour = case_when(
+      ovc_group == "USAID Only" ~ USAID_blue,
+      ovc_group == "CDC Only" ~ USAID_ltblue,
+      ovc_group == "Mixed" ~ USAID_dkred,
+      ovc_group == "OVC & TX do not overlap in this district" ~ USAID_mgrey,
+      TRUE ~ USAID_mgrey
+    ))
+
+  # ovc_labels <- spdf_ovctx %>% distinct(ovc_group) %>% pull()
+  # ovc_colors <- spdf_ovctx %>% distinct(ovc_colour) %>% pull()
+
+  ovc_items <- c("USAID Only" = USAID_blue,
+                 "CDC Only"   = USAID_ltblue,
+                 "Mixed"      = USAID_dkred,
+                 "OVC & TX do not overlap in this district" = USAID_mgrey)
+
+  # Get basemap
+  basemap <- get_basemap(spdf = spdf,
+                         cntry = country,
+                         terr_raster = terr_raster,
+                         add_admins = TRUE)
+
+  map <- basemap +
+    #geom_sf(data = spdf_adm0, colour = grey90k, fill = USAID_mgrey, size = .2) +
+    geom_sf(data = spdf_ovctx, aes(fill = ovc_group),
+            lwd = .2, color = grey10k) +
+    geom_sf(data = spdf_adm0, colour = grey90k, fill = NA, size = 1) +
+    # scale_fill_manual(
+    #   #values = c("#384F6C","#BA3D56", USAID_dkred, USAID_mgrey, USAID_mgrey),
+    #   values = c(USAID_blue, USAID_ltblue, USAID_dkred, USAID_mgrey, USAID_mgrey),
+    #   labels = c("USAID Only", "CDC Only", "Mixed",
+    #              "OVC & TX do not overlap in this district", "NA")
+    # ) +
+    scale_fill_manual(values = ovc_items) +
+    # scale_fill_identity(labels = ovc_labels, guide = "legend") +
+    ggtitle(label = "Agency with OVC_SERV_UNDER_18 \n & TX_CURR <20 Targets in FY21",
+            subtitle = "") +
+    si_style_map() +
+    theme(
+      legend.direction = "vertical",
+      legend.position =  "bottom",
+      legend.key.width = ggplot2::unit(1, "cm"),
+      legend.key.height = ggplot2::unit(.5, "cm"),
+      legend.text.align = 0,
+      plot.title = element_text(family = "Gill Sans MT", size = 10)
+    )
+
+  return(map)
+}
+
+
+#' Map Mixed Coverage
+#'
+#' @param spdf
+#' @param df_ovctx
+#' @param terr_raster
+#' @return
+#'
+map_mixed_coverage <-
+  function(spdf, df_ovctx, terr_raster) {
+
+    country <- df_ovctx %>%
+      distinct(operatingunit) %>%
+      pull()
+
+    # Geodata
+    spdf_adm0 <- spdf %>%
+      filter(operatingunit %in% country, type == "OU")
+
+    # Append Program data to geo
+    spdf_ovctx <- spdf %>%
+      filter(operatingunit %in% country, type == "PSNU") %>%
+      left_join(df_ovctx, by = c("uid" = "psnuuid")) %>%
+      filter(ovc_group == "Mixed")
+
+    # Get basemap
+    basemap <- get_basemap(spdf = spdf,
+                           cntry = country,
+                           terr_raster = terr_raster,
+                           add_admins = TRUE)
+
+    mixed_map <- basemap +
+      geom_sf(data = spdf_ovctx, aes(fill = ovc_group),
+              lwd = .2, fill = USAID_dkred,
+              color = grey10k, show.legend = F) +
+      #scale_fill_manual(values = c(USAID_dkred)) +
+      geom_sf(data = spdf_adm0, colour = grey90k, fill = NA, size = 1) +
+      ggtitle(label = "Mixed Agency OVC_SERV_UNDER_18 \n & TX_CURR <20 Targets in FY21",
+              subtitle = "")
+      si_style_map() +
+      theme(
+        plot.title = element_text(family = "Gill Sans MT", size = 10)
+      )
+
+    return(mixed_map)
+  }
+
+#' Viz OVC & TX Coverage
+#'
+#' @param spdf
+#' @param df_ovctx
+#' @param terr_raster
+#' @param caption
+#' @return
+#'
+viz_ovctx_coverage <-
+  function(spdf, df_ovctx, terr_raster,
+           caption = "",
+           save = FALSE,
+           filename = "") {
+
+    # Heat
+    heatmap <- heatmap_ovc_tx(df = df_ovctx)
+
+    if (is.null(heatmap)) return(NULL)
+
+    # Overlap
+    ovctx <- map_ovctx_coverage(spdf = spdf_pepfar,
+                                df_ovctx = df_ovctx,
+                                terr_raster = terr)
+
+    if (is.null(ovctx)) return(NULL)
+
+    # Mixed
+    mixed <- map_mixed_coverage(spdf = spdf_pepfar,
+                                df_ovctx = df_ovctx,
+                                terr_raster = terr)
+
+    if (is.null(mixed)) return(NULL)
+
+    viz <- (ovctx + mixed + heatmap) +
+      #plot_layout(nrow = 1) +
+      plot_annotation(
+        title = "",
+        caption = caption
+      )
+
+    # Save plot
+    if (save == TRUE & endsWith(tolower(filename), ".png")) {
+
+      print(viz)
+
+      ggsave(here("./Graphics", filename),
+             plot = last_plot(), scale = 1.2, dpi = 310,
+             width = 10, height = 7, units = "in")
+    }
+
+    return(viz)
   }

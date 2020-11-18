@@ -210,17 +210,58 @@ get_output_name <- function(country,
 
     # Test OVC x TX Overlap
 
+
     cntries <- df_ovc_tx %>%
-        filter(!str_detect(operatingunit, " Region$")) %>%
+        filter(!str_detect(operatingunit, " Region$"),
+               !is.na(ovc_group),
+               'Mixed' %in% ovc_group) %>%
         distinct(operatingunit) %>%
         pull()
 
     df_cntry <- df_ovc_tx %>%
-        filter(operatingunit == cntries %>% nth(24))
+        filter(operatingunit == cntries %>% nth(1))
 
-    heatmap_ovc_tx(df = df_cntry)
+    heatmap_ovctx_coverage(df = df_cntry)
 
+    map_ovctx_coverage(spdf = spdf_pepfar,
+                       df_ovctx = df_cntry,
+                       terr_raster = terr)
 
+    map_mixed_coverage(spdf = spdf_pepfar,
+                       df_ovctx = df_cntry,
+                       terr_raster = terr)
+
+    ovctx_caption <- paste0(
+        "OHA/SIEI - Data Source: FY20Q3c MSD - USAID & CDC,
+            OVC_SERV_UNDER_18 & TX_CURR, Age < 20\n",
+        toupper(cntries %>% nth(24)), ", Produced on ",
+        format(Sys.Date(), "%Y%m%d")
+    )
+
+    viz_ovctx_coverage(spdf = spdf_pepfar,
+                       df_ovctx = df_cntry,
+                       terr_raster = terr,
+                       caption = ovctx_caption,
+                       save = FALSE)
+
+    # Batch OVC/TX Coverage
+    cntries[c(2:4,6:20,21:24)] %>%
+    #cntries[c(1,5,21)] # these are not working
+        map(.x, .f = ~ viz_ovctx_coverage(
+                spdf = spdf_pepfar,
+                df_ovctx = df_ovc_tx %>% filter(operatingunit == .x),
+                terr_raster = terr,
+                caption = paste0(
+                    "OHA/SIEI - Data Source: FY20Q3c MSD - USAID & CDC,
+            OVC_SERV_UNDER_18 & TX_CURR, Age < 20\n",
+                    toupper(.x), ", Produced on ",
+                    format(Sys.Date(), "%Y%m%d")
+                ),
+                save = TRUE,
+                filename = paste0(rep_pd, "_OVC_TX_Overlap_",
+                                  toupper(.x), "_",
+                                  format(Sys.Date(), "%Y%m%d"), ".png")
+            ))
 
 ## END ##
 
