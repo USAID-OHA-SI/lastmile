@@ -23,11 +23,12 @@ library(extrafont)
 
 # REQUIRED -------------------------------------------------------------------------------
 
-    ## Get Credentials
+## Get Credentials
 
-    source("../_secrets/credentials.R")
-    source("./Scripts/00_Geo_Utilities.R")
-    source("./Scripts/00_OVC_Utilities.R")
+source("../_secrets/credentials.R")
+source("./Scripts/00_Utilities.R")
+source("./Scripts/00_Geo_Utilities.R")
+source("./Scripts/00_OVC_Utilities.R")
 
 
 # GLOBALS -------------------------------------------------------------
@@ -49,6 +50,8 @@ psnu_im <- "^MER_.*_PSNU_IM_.*_20200918_.*.zip$"
 ## Reporting Filters
 rep_agency = "USAID"
 rep_agencies <- c("USAID", "HHS/CDC")
+
+age_group <- "<15" # options are: "<15", "<20", "All"
 
 rep_fy = 2020
 rep_qtr = 2 # Data available for Q2 & 4
@@ -130,14 +133,6 @@ get_output_name <- function(country,
 
 # DATA --------------------------------------------------------------
 
-    ## Geodata
-
-    ## Terrain Raster
-    terr <- get_raster(terr_path = dir_terr)
-
-    ## ORGs
-    spdf_pepfar <- build_spdf(dir_geo = dir_geodata, df_psnu = df_psnu)
-
     ## MSD
 
     ## File path + name
@@ -152,6 +147,14 @@ get_output_name <- function(country,
 
     ## MER PSNU Data
     df_psnu <- vroom(file_psnu_im, col_types = c(.default = "c"))
+
+    ## Geodata
+
+    ## Terrain Raster
+    terr <- get_raster(terr_path = dir_terr)
+
+    ## ORGs
+    spdf_pepfar <- build_spdf(dir_geo = dir_geodata, df_psnu = df_psnu)
 
 
     ## MER Data Munging

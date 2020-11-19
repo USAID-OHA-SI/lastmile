@@ -17,11 +17,13 @@
 extract_ovc_coverage <-
   function(df_msd,
            rep_fy = 2020,
+           rep_age = "<20",
            rep_agency = "USAID",
            rep_pd = "FY20Q2") {
 
     # All Params
     fy <- {{rep_fy}}
+    age <- {{rep_age}}
     agency <- {{rep_agency}}
     pd <- {{rep_pd}}
 
@@ -32,34 +34,67 @@ extract_ovc_coverage <-
              indicator == "OVC_HIVSTAT_POS" &
                standardizeddisaggregate == "Total Numerator" |
                indicator == "TX_CURR" &
-               standardizeddisaggregate == "Age/Sex/HIVStatus") %>%
-      filter(!trendsfine %in% c("20-24","25-29","30-34","35-39","40-49","50+")) %>%
+               standardizeddisaggregate == "Age/Sex/HIVStatus",
+             !str_detect(psnu, "_Military"))
+
+    if ( age == "<15") {
+      df_proxy_ovc_cov <- df_proxy_ovc_cov %>%
+        filter(!trendsfine %in%
+                 c("15-19", "20-24","25-29","30-34","35-39","40-49","50+"))
+    }
+    else if (age == "<20") {
+      df_proxy_ovc_cov <- df_proxy_ovc_cov %>%
+        filter(!trendsfine %in%
+                 c("20-24","25-29","30-34","35-39","40-49","50+"))
+    }
+
+    df_proxy_ovc_cov <- df_proxy_ovc_cov %>%
+      clean_agency() %>% # Change HHS/CDC to CDC
+      clean_psnu() %>%   # Remove Districts, Country, etc from the end
+      mutate(
+        shortname = psnu,
+        indicator = paste0(indicator, "_", fundingagency)
+      ) %>%
       group_by(fiscal_year,operatingunit,psnuuid,psnu,indicator) %>%
       summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
       ungroup() %>%
       reshape_msd(clean = TRUE) %>%
       dplyr::select(-period_type) %>%
       spread(indicator, val) %>%
-      mutate(
-        proxy_coverage = case_when(
-          OVC_HIVSTAT_POS > 0 ~ OVC_HIVSTAT_POS/TX_CURR
+      # mutate(
+      #   proxy_coverage = case_when(
+      #     OVC_HIVSTAT_POS > 0 ~ OVC_HIVSTAT_POS/TX_CURR
+      #   ),
+      #   proxy_coverage_max = case_when(
+      #     proxy_coverage > 1 ~ 1.01,
+      #     TRUE ~ proxy_coverage
+      #   ),
+      #   shortname = psnu,
+      # ) %>%
+      # filter(period == pd, !is.na(proxy_coverage))
+      rowwise() %>%
+      mutate( ## TODO: Try to avoid rowwise
+        TX_CURR = sum(c_across(TX_CURR_CDC:TX_CURR_USAID), na.rm = TRUE),
+        flag = case_when(
+          OVC_HIVSTAT_POS_USAID > 0 & OVC_HIVSTAT_POS_CDC > 0 ~ "mixed agency ovc"
         ),
-        proxy_coverage_max = case_when(
-          proxy_coverage > 1 ~ 1.01,
-          TRUE ~ proxy_coverage
+        proxy_coverage_usaid = case_when(
+          OVC_HIVSTAT_POS_USAID > 0 ~ OVC_HIVSTAT_POS_USAID/TX_CURR
         ),
-        shortname = str_remove(psnu," District$| County$"),
-        shortname = str_remove(shortname, "District Municipality$"),
-        shortname = str_remove(shortname, "Metropolitan Municipality$"),
-        shortname = str_remove(shortname, "Municipality$")
+        proxy_coverage_cdc = case_when(
+          OVC_HIVSTAT_POS_CDC > 0 ~ OVC_HIVSTAT_POS_CDC/TX_CURR
+        ),
       ) %>%
-      filter(period == pd, !is.na(proxy_coverage))
+      filter(period == pd)
 
+    # Check valid rows
     if (nrow(df_proxy_ovc_cov) == 0) {
       cat(
         "\n",
         Wavelength::paint_red(
           paste0("No OVC Proxy Coverage data available for ", pd)), "\n")
+
+      return(NULL)
     }
 
     return(df_proxy_ovc_cov)
