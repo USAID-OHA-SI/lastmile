@@ -82,9 +82,10 @@ clean_agency <-
     # Remove extract characters
     .data <- .data %>%
       mutate(
+        fundingagency = toupper(fundingagency),
         fundingagency = case_when(
-          touuper(fundingagency) == "HHS/CDC" ~ "CDC",
-          TRUE ~ touuper(fundingagency)
+          toupper(fundingagency) == "HHS/CDC" ~ "CDC",
+          TRUE ~ fundingagency
         )
       )
   }

@@ -8,17 +8,18 @@
 
 #' @title Extract OVC Proxy Coverage data
 #'
-#' @param df_msd Dataframe of MSD PSNU IM
-#' @param rep_fy Reporting Fiscal Year
-#' @param rep_agency Reporting / Funding Agency
-#' @param rep_pd Reporting Period (eg: FY20Q2)
+#' @param df_msd      Dataframe of MSD PSNU IM
+#' @param rep_fy      Reporting Fiscal Year
+#' @param rep_age     Filter <15 or <20
+#' @param rep_agency  Reporting / Funding Agency, as char or vector
+#' @param rep_pd      Reporting Period (eg: FY20Q2)
 #' @return df
 #'
 extract_ovc_coverage <-
   function(df_msd,
            rep_fy = 2020,
            rep_age = "<20",
-           rep_agency = "USAID",
+           rep_agency = NULL,
            rep_pd = "FY20Q2") {
 
     # All Params
@@ -29,14 +30,23 @@ extract_ovc_coverage <-
 
     # Filter and Calculate Proxy Coverage
     df_proxy_ovc_cov <- df_msd %>%
-      filter(fiscal_year == fy,
-             fundingagency %in% agency,
-             indicator == "OVC_HIVSTAT_POS" &
+      filter(fiscal_year == fy)
+
+    # Filter agency id any
+    if ( !is.null(agency) ) {
+      df_proxy_ovc_cov <- df_proxy_ovc_cov %>%
+        filter(fundingagency %in% agency)
+    }
+
+    # continue with filter
+    df_proxy_ovc_cov <- df_proxy_ovc_cov %>%
+      filter(indicator == "OVC_HIVSTAT_POS" &
                standardizeddisaggregate == "Total Numerator" |
                indicator == "TX_CURR" &
                standardizeddisaggregate == "Age/Sex/HIVStatus",
              !str_detect(psnu, "_Military"))
 
+    # filter out age bands
     if ( age == "<15") {
       df_proxy_ovc_cov <- df_proxy_ovc_cov %>%
         filter(!trendsfine %in%
@@ -47,44 +57,73 @@ extract_ovc_coverage <-
         filter(!trendsfine %in%
                  c("20-24","25-29","30-34","35-39","40-49","50+"))
     }
+    else {
+      # message to be printed
+      msg <- paste0("ERROR - Unknown OVC Age Band: ", age)
 
+      cat("\n", Wavelength::paint_red(msg), "\n")
+
+      return(NULL)
+    }
+
+    # continue with calculations
     df_proxy_ovc_cov <- df_proxy_ovc_cov %>%
       clean_agency() %>% # Change HHS/CDC to CDC
       clean_psnu() %>%   # Remove Districts, Country, etc from the end
       mutate(
-        shortname = psnu,
-        indicator = paste0(indicator, "_", fundingagency)
+        indicator = paste0(indicator, "_", fundingagency),
+        shortname = psnu
       ) %>%
-      group_by(fiscal_year,operatingunit,psnuuid,psnu,indicator) %>%
+      group_by(fiscal_year, operatingunit, psnuuid, psnu, indicator) %>%
       summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
       ungroup() %>%
       reshape_msd(clean = TRUE) %>%
       dplyr::select(-period_type) %>%
       spread(indicator, val) %>%
-      # mutate(
-      #   proxy_coverage = case_when(
-      #     OVC_HIVSTAT_POS > 0 ~ OVC_HIVSTAT_POS/TX_CURR
-      #   ),
-      #   proxy_coverage_max = case_when(
-      #     proxy_coverage > 1 ~ 1.01,
-      #     TRUE ~ proxy_coverage
-      #   ),
-      #   shortname = psnu,
-      # ) %>%
-      # filter(period == pd, !is.na(proxy_coverage))
-      rowwise() %>%
-      mutate( ## TODO: Try to avoid rowwise
-        TX_CURR = sum(c_across(TX_CURR_CDC:TX_CURR_USAID), na.rm = TRUE),
-        flag = case_when(
-          OVC_HIVSTAT_POS_USAID > 0 & OVC_HIVSTAT_POS_CDC > 0 ~ "mixed agency ovc"
-        ),
-        proxy_coverage_usaid = case_when(
-          OVC_HIVSTAT_POS_USAID > 0 ~ OVC_HIVSTAT_POS_USAID/TX_CURR
-        ),
-        proxy_coverage_cdc = case_when(
-          OVC_HIVSTAT_POS_CDC > 0 ~ OVC_HIVSTAT_POS_CDC/TX_CURR
-        ),
-      ) %>%
+      rowwise() ## TODO: Try to avoid rowwise
+
+    # OVC Cov for one agency
+    if (!is.null(agency)) {
+
+      df_proxy_ovc_cov <- df_proxy_ovc_cov %>%
+        mutate(
+          proxy_coverage = case_when(
+            OVC_HIVSTAT_POS > 0 ~ OVC_HIVSTAT_POS/TX_CURR
+          ),
+          proxy_coverage_max = case_when(
+            proxy_coverage > 1 ~ 1,
+            TRUE ~ proxy_coverage
+          )
+        )
+    }
+    # OVC Cov for >1 Agencies
+    else {
+
+      df_proxy_ovc_cov <- df_proxy_ovc_cov %>%
+        mutate(
+          TX_CURR = sum(c_across(TX_CURR_CDC:TX_CURR_USAID), na.rm = TRUE),
+          flag = case_when(
+            OVC_HIVSTAT_POS_USAID > 0 & OVC_HIVSTAT_POS_CDC > 0 ~ "mixed agency ovc"
+          ),
+          proxy_coverage_usaid = case_when(
+            OVC_HIVSTAT_POS_USAID > 0 ~ OVC_HIVSTAT_POS_USAID/TX_CURR
+          ),
+          proxy_coverage_usaid_max = case_when(
+            proxy_coverage_usaid > 1 ~ 1,
+            TRUE ~ proxy_coverage_usaid
+          ),
+          proxy_coverage_cdc = case_when(
+            OVC_HIVSTAT_POS_CDC > 0 ~ OVC_HIVSTAT_POS_CDC/TX_CURR
+          ),
+          proxy_coverage_cdc_max = case_when(
+            proxy_coverage_cdc > 1 ~ 1,
+            TRUE ~ proxy_coverage_cdc
+          )
+        )
+    }
+
+    df_proxy_ovc_cov <- df_proxy_ovc_cov %>%
+      ungroup() %>%
       filter(period == pd)
 
     # Check valid rows
@@ -175,21 +214,22 @@ extract_ovc_tx_overlap <-
 
 #' @title Map OVC Proxy Coverage Data
 #'
-#' @param spdf Spatial Dataframe of MSD PSNU IM
-#' @param terr Terrain Raster
-#' @param df_ovc Proxy OVC Coverage data
-#' @param country Operatingunit(s)
-#' @param orglevel Org Hierarchy Level
+#' @param spdf        Spatial Dataframe of MSD PSNU IM
+#' @param df_ovc      Proxy OVC Coverage data
+#' @param terr_raster Terrain Raster
+#' @param orglevel    Org Hierarchy Level
+#' @param agency      Operatingunit(s)
 #' @return ggplot plot
 #'
 map_ovc_coverage <-
   function(spdf, df_ovc, terr_raster,
            orglevel = "PSNU",
+           agency = TRUE,
            facet = FALSE) {
 
     # Params
     orglevel <- {{orglevel}}
-    rep_pd <- {{rep_pd}}
+    agency <- {{agency}}
 
     # Identify Country/OU
     country <- df_ovc %>%
@@ -200,12 +240,18 @@ map_ovc_coverage <-
     spdf_adm0 <- spdf %>%
       filter(operatingunit %in% country, type == "OU")
 
-    # spdf_adm1 <- spdf %>%
-    #   filter(operatingunit %in% country, type == "SNU1")
+    # reformat data
+    if (!agency) {
+      df_ovc <- df_ovc %>%
+        dplyr::select(proxy_coverage = proxy_coverage_usaid,
+                      proxy_coverage_max = proxy_coverage_usaid_max) %>%
+        filter(proxy_coverage > 0, is.na(flag))
+    }
 
     # Append Program data to geo
     spdf_ovc <- spdf %>%
-      filter(operatingunit %in% country, type == orglevel) %>%
+      #filter(operatingunit %in% country, type == orglevel) %>%
+      filter(operatingunit %in% country) %>%
       left_join(df_ovc, by = c("uid" = "psnuuid")) %>%
       filter(proxy_coverage > 0)
 
@@ -218,7 +264,7 @@ map_ovc_coverage <-
     ovc_map <- basemap +
       geom_sf(
         data = spdf_ovc,
-        aes(fill = proxy_coverage),
+        aes(fill = proxy_coverage_max),
         lwd = .2,
         color = grey10k
       ) +

@@ -51,7 +51,8 @@ psnu_im <- "^MER_.*_PSNU_IM_.*_20200918_.*.zip$"
 rep_agency = "USAID"
 rep_agencies <- c("USAID", "HHS/CDC")
 
-age_group <- "<15" # options are: "<15", "<20", "All"
+age_group <- "<20" # options are: "<15", "<20", "All"
+age_groups <- c("<15", "<20")
 
 rep_fy = 2020
 rep_qtr = 2 # Data available for Q2 & 4
@@ -148,13 +149,19 @@ get_output_name <- function(country,
     ## MER PSNU Data
     df_psnu <- vroom(file_psnu_im, col_types = c(.default = "c"))
 
+    df_psnu <- df_psnu %>%
+        mutate(across(starts_with("qtr"), as.integer))
+
     ## Geodata
 
     ## Terrain Raster
     terr <- get_raster(terr_path = dir_terr)
 
     ## ORGs
-    spdf_pepfar <- build_spdf(dir_geo = dir_geodata, df_psnu = df_psnu)
+    spdf_pepfar <- build_spdf(
+        dir_geo = paste0(dir_geodata, "/VcPepfarPolygons_2020.07.24"),
+        df_psnu = df_psnu
+    )
 
 
     ## MER Data Munging
@@ -162,6 +169,7 @@ get_output_name <- function(country,
     ## Proxy OVC Coverage
     df_ovc_cov <- extract_ovc_coverage(df_msd = df_psnu,
                                        rep_fy = rep_fy,
+                                       rep_age = "<20", #age_group, #<15 or <20
                                        rep_agency = rep_agency,
                                        rep_pd = rep_pd)
 
@@ -176,9 +184,16 @@ get_output_name <- function(country,
 
     ## Test OVC  Proxy Cov maps
     cname <- "Zambia"
-    cname <- "Zimbabwe"
+    #cname <- "Zimbabwe"
 
-    df_cntry <- df_ovc_cov %>% filter(operatingunit == cname)
+    spdf_pepfar %>%
+        filter(operatingunit == cname, type == "PSNU") %>%
+        ggplot() +
+        geom_sf(aes(fill = snu1)) +
+        si_style_map()
+
+    df_cntry <- df_ovc_cov %>%
+        filter(operatingunit == cname)
 
 
     map_ovc_coverage(spdf = spdf_pepfar,
@@ -212,7 +227,6 @@ get_output_name <- function(country,
 
 
     # Test OVC x TX Overlap
-
 
     cntries <- df_ovc_tx %>%
         filter(!str_detect(operatingunit, " Region$"),
@@ -248,6 +262,7 @@ get_output_name <- function(country,
                        save = FALSE)
 
     # Batch OVC/TX Coverage
+    #
     cntries[c(2:4,6:20,21:24)] %>%
     #cntries[c(1,5,21)] # these are not working
         map(.x, .f = ~ viz_ovctx_coverage(
