@@ -287,9 +287,9 @@ get_basemap <-
     df_geo1 <- df_geo %>%
       filter(type == "SNU1")
 
-    if (nrow(df_geo1) == 0)
-      df_geo1 <- df_geo %>%
-        filter(type == "PSNU")
+    # if (nrow(df_geo1) == 0)
+    #   df_geo1 <- df_geo %>%
+    #     filter(type == "PSNU")
 
     # Get psnu boundaries
     # df_geo2 <- df_geo %>% filter(type == "PSNU")
@@ -326,7 +326,7 @@ get_basemap <-
       )
 
     # Add sub-admins boundaries
-    if (add_admins) {
+    if (add_admins & nrow(df_geo1) > 0) {
       m <- m +
         geom_sf(
           data = df_geo1,

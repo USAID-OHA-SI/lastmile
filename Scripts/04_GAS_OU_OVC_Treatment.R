@@ -45,7 +45,7 @@ dir_merdata <- "../../MERDATA"
 
 ## Q3 MER Data
 
-psnu_im <- "^MER_.*_PSNU_IM_.*_20200918_.*.zip$"
+psnu_im <- "^MER_.*_PSNU_IM_.*_20201113_v1_1.zip$"
 
 ## Reporting Filters
 rep_agency = "USAID"
@@ -55,7 +55,7 @@ age_group <- "<20" # options are: "<15", "<20", "All"
 age_groups <- c("<15", "<20")
 
 rep_fy = 2020
-rep_qtr = 2 # Data available for Q2 & 4
+rep_qtr = 4 # Data available for Q2 & 4
 
 rep_pd = rep_fy %>%
     as.character() %>%
@@ -98,17 +98,22 @@ get_title <- function(country, var = NULL) {
 #' @param var df variable
 #' @return plot caption
 #'
-get_caption <- function(country, var = NULL) {
+get_caption <- function(country,
+                        age = "<20",
+                        agency = "All Agencies",
+                        var = NULL) {
 
     caption <- paste0(
-        "OHA/SIEI - Data Source: FY20Q3c MSD - USAID Only,
-            Proxy Coverage = OVC_HIV_STAT_POS / TX_CURR, Age < 20\n",
+        "OHA/SIEI - Data Source: FY20Q4i MSD - ", agency,
+        "\nProxy Coverage = OVC_HIV_STAT_POS / TX_CURR, Age ",
+            age, "\n",
         toupper({{country}}), ", Produced on ",
         format(Sys.Date(), "%Y%m%d")
     )
 
     return(caption)
 }
+
 
 
 #' Graphic file name
@@ -118,12 +123,28 @@ get_caption <- function(country, var = NULL) {
 #' @return plot file name
 #'
 get_output_name <- function(country,
-                            rep_pd = "FY20Q2",
-                            var = "Proxy Coverage") {
+                            rep_pd = "FY20Q4",
+                            var = "Proxy Coverage",
+                            age = NULL,
+                            agency = NULL) {
 
     name <- paste0(rep_pd, "_",
-                   str_replace({{var}}, " ", "_"),
-                   "_", toupper({{country}}),
+                   str_replace({{var}}, " ", "_"))
+
+    # Age
+    if (!is.null(age)) {
+        name <- paste0(name, "_", str_replace({{age}}, "<", "Under"))
+    }
+
+    # Agency
+    if (!is.null(agency)) {
+        name <- paste0(name, "_", str_replace({{agency}}, " ", "_"))
+    }
+
+    # Country & Date
+
+    name <- paste0(name, "_",
+                   toupper({{country}}),
                    "_",
                    format(Sys.Date(), "%Y%m%d"),
                    ".png")
@@ -150,7 +171,7 @@ get_output_name <- function(country,
     df_psnu <- vroom(file_psnu_im, col_types = c(.default = "c"))
 
     df_psnu <- df_psnu %>%
-        mutate(across(starts_with("qtr"), as.integer))
+        mutate(across(where(is.numeric), as.integer))
 
     ## Geodata
 
@@ -170,7 +191,7 @@ get_output_name <- function(country,
     df_ovc_cov <- extract_ovc_coverage(df_msd = df_psnu,
                                        rep_fy = rep_fy,
                                        rep_age = "<20", #age_group, #<15 or <20
-                                       rep_agency = rep_agency,
+                                       rep_agency = NULL, #rep_agency,
                                        rep_pd = rep_pd)
 
 
@@ -185,6 +206,10 @@ get_output_name <- function(country,
     ## Test OVC  Proxy Cov maps
     cname <- "Zambia"
     #cname <- "Zimbabwe"
+    #cname <- "Nigeria"
+    # cname <- "Ethiopia"
+    # cname <- "Tanzania"
+    # cname <- "South Africa"
 
     spdf_pepfar %>%
         filter(operatingunit == cname, type == "PSNU") %>%
@@ -195,12 +220,13 @@ get_output_name <- function(country,
     df_cntry <- df_ovc_cov %>%
         filter(operatingunit == cname)
 
-
     map_ovc_coverage(spdf = spdf_pepfar,
                      df_ovc = df_cntry,
-                     terr_raster = terr)
+                     terr_raster = terr,
+                     agency = T)
 
-    plot_ovc_coverage(df_ovc = df_cntry)
+    plot_ovc_coverage(df_ovc = df_cntry) +
+        facet_wrap(~snu1)
 
     plot_ovc_coverage(df_ovc = df_ovc_cov, country = cname)
 
@@ -212,18 +238,95 @@ get_output_name <- function(country,
                      caption = get_caption(cname))
 
 
-    # Batch - OVC Proxy Coverage
+    # Batch 1: OVC Proxy Coverage <20, All Agencies
+    df_ovc_cov <- extract_ovc_coverage(df_msd = df_psnu,
+                                       rep_fy = rep_fy,
+                                       rep_age = "<20",
+                                       rep_agency = NULL,
+                                       rep_pd = rep_pd)
+
     df_ovc_cov %>%
+        filter(proxy_coverage > 0, !str_detect(operatingunit, " Region$")) %>%
         distinct(operatingunit) %>%
         pull() %>%
-        map(.x, .f = ~ viz_ovc_coverage(spdf = spdf_pepfar,
-                                        df_ovc = df_ovc_cov,
-                                        terr_raster = terr,
-                                        rep_pd = rep_pd,
-                                        country = .x,
-                                        caption = get_caption(.x),
-                                        filename = get_output_name(.x),
-                                        save = T))
+        map(.x, .f = ~ viz_ovc_coverage(
+            spdf = spdf_pepfar,
+            df_ovc = df_ovc_cov,
+            terr_raster = terr,
+            rep_pd = rep_pd,
+            country = .x,
+            age = "<20",
+            caption = get_caption(.x, age = "<20", agency = "All Agencies"),
+            filename = get_output_name(.x, age = "<20", agency = "All Agencies"),
+            save = T))
+
+    # Batch 2: OVC Proxy Coverage <15, All Agencies
+    df_ovc_cov <- extract_ovc_coverage(df_msd = df_psnu,
+                                       rep_fy = rep_fy,
+                                       rep_age = "<15",
+                                       rep_agency = NULL,
+                                       rep_pd = rep_pd)
+
+    df_ovc_cov %>%
+        filter(proxy_coverage > 0, !str_detect(operatingunit, " Region$")) %>%
+        distinct(operatingunit) %>%
+        pull() %>%
+        map(.x, .f = ~ viz_ovc_coverage(
+            spdf = spdf_pepfar,
+            df_ovc = df_ovc_cov,
+            terr_raster = terr,
+            rep_pd = rep_pd,
+            country = .x,
+            age = "<15",
+            caption = get_caption(.x, age = "<15", agency = "All Agencies"),
+            filename = get_output_name(.x, age = "<15", agency = "All Agencies"),
+            save = T))
+
+    # Batch 3: OVC Proxy Coverage <20, USAID Only
+    df_ovc_cov <- extract_ovc_coverage(df_msd = df_psnu,
+                                       rep_fy = rep_fy,
+                                       rep_age = "<20",
+                                       rep_agency = rep_agency,
+                                       rep_pd = rep_pd)
+
+    df_ovc_cov %>%
+        filter(proxy_coverage_usaid > 0, !str_detect(operatingunit, " Region$")) %>%
+        distinct(operatingunit) %>%
+        pull() %>%
+        #nth(8) %>%
+        map(.x, .f = ~ viz_ovc_coverage(
+            spdf = spdf_pepfar,
+            df_ovc = df_ovc_cov,
+            terr_raster = terr,
+            rep_pd = rep_pd,
+            country = .x,
+            age = "<20",
+            caption = get_caption(.x, age = "<20", agency = "USAID Only"),
+            filename = get_output_name(.x, age = "<20", agency = "USAID Only"),
+            save = T))
+
+    # Batch 4: OVC Proxy Coverage <15, USAID Only
+    df_ovc_cov <- extract_ovc_coverage(df_msd = df_psnu,
+                                       rep_fy = rep_fy,
+                                       rep_age = "<15",
+                                       rep_agency = rep_agency,
+                                       rep_pd = rep_pd)
+
+    df_ovc_cov %>%
+        filter(proxy_coverage_usaid > 0, !str_detect(operatingunit, " Region$")) %>%
+        distinct(operatingunit) %>%
+        pull() %>%
+        map(.x, .f = ~ viz_ovc_coverage(
+            spdf = spdf_pepfar,
+            df_ovc = df_ovc_cov,
+            terr_raster = terr,
+            rep_pd = rep_pd,
+            country = .x,
+            age = "<15",
+            caption = get_caption(.x, age = "<15", agency = "USAID Only"),
+            filename = get_output_name(.x, age = "<15", agency = "USAID Only"),
+            save = T))
+
 
 
     # Test OVC x TX Overlap

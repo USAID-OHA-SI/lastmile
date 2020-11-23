@@ -78,6 +78,7 @@ extract_viralload <-
       ) %>%
       group_by(fiscal_year,
                operatingunit,
+               snu1,
                psnuuid,
                psnu,
                indicator,
@@ -91,7 +92,7 @@ extract_viralload <-
 
     # Calculate VL Stats
     df_vl <- df_vl %>%
-      group_by(operatingunit, psnuuid, psnu, fundingagency) %>%
+      group_by(operatingunit, snu1, psnuuid, psnu, fundingagency) %>%
       mutate(VLC = TX_PVLS_D / lag(TX_CURR, 2, order_by = period)) %>%
       ungroup() %>%
       filter(period == pd) %>%
@@ -133,7 +134,7 @@ extract_peds_viralload <-
 
     # Variables
     df <- {{df_msd}}
-    pd <- {{rep_pd}}
+    pd <- {{rep_qtr}}
 
     # Proceed with filters
     df_vl <- df %>%

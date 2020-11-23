@@ -32,12 +32,6 @@ extract_ovc_coverage <-
     df_proxy_ovc_cov <- df_msd %>%
       filter(fiscal_year == fy)
 
-    # Filter agency id any
-    if ( !is.null(agency) ) {
-      df_proxy_ovc_cov <- df_proxy_ovc_cov %>%
-        filter(fundingagency %in% agency)
-    }
-
     # continue with filter
     df_proxy_ovc_cov <- df_proxy_ovc_cov %>%
       filter(indicator == "OVC_HIVSTAT_POS" &
@@ -68,24 +62,25 @@ extract_ovc_coverage <-
 
     # continue with calculations
     df_proxy_ovc_cov <- df_proxy_ovc_cov %>%
-      clean_agency() %>% # Change HHS/CDC to CDC
-      clean_psnu() %>%   # Remove Districts, Country, etc from the end
-      mutate(
-        indicator = paste0(indicator, "_", fundingagency),
-        shortname = psnu
-      ) %>%
-      group_by(fiscal_year, operatingunit, psnuuid, psnu, indicator) %>%
-      summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
-      ungroup() %>%
-      reshape_msd(clean = TRUE) %>%
-      dplyr::select(-period_type) %>%
-      spread(indicator, val) %>%
-      rowwise() ## TODO: Try to avoid rowwise
+      clean_agency() %>%      # Change HHS/CDC to CDC
+      clean_psnu()            # Remove Districts, Country, etc from the end
 
-    # OVC Cov for one agency
-    if (!is.null(agency)) {
 
+    # Disagg ovc by agency if needed
+    if (is.null(agency)) {
+
+      # OVC Cov for all agency
       df_proxy_ovc_cov <- df_proxy_ovc_cov %>%
+        group_by(fiscal_year, operatingunit, snu1, psnuuid, psnu, indicator) %>%
+        summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
+        ungroup() %>%
+        reshape_msd(clean = TRUE) %>%
+        dplyr::select(-period_type) %>%
+        spread(indicator, val)
+
+      # Calcualte Proxy Coverage
+      df_proxy_ovc_cov <- df_proxy_ovc_cov %>%
+        rowwise() %>%
         mutate(
           proxy_coverage = case_when(
             OVC_HIVSTAT_POS > 0 ~ OVC_HIVSTAT_POS/TX_CURR
@@ -96,10 +91,21 @@ extract_ovc_coverage <-
           )
         )
     }
-    # OVC Cov for >1 Agencies
     else {
+      # OVC Cov for specific agency
+      df_proxy_ovc_cov <- df_proxy_ovc_cov %>%
+        mutate(
+          indicator = paste0(indicator, "_", fundingagency) # Keep track of agency
+        ) %>%
+        group_by(fiscal_year, operatingunit, snu1, psnuuid, psnu, indicator) %>%
+        summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
+        ungroup() %>%
+        reshape_msd(clean = TRUE) %>%
+        dplyr::select(-period_type) %>%
+        spread(indicator, val)
 
       df_proxy_ovc_cov <- df_proxy_ovc_cov %>%
+        rowwise()  %>%
         mutate(
           TX_CURR = sum(c_across(TX_CURR_CDC:TX_CURR_USAID), na.rm = TRUE),
           flag = case_when(
@@ -122,8 +128,10 @@ extract_ovc_coverage <-
         )
     }
 
+    # Filter by reporting period
     df_proxy_ovc_cov <- df_proxy_ovc_cov %>%
       ungroup() %>%
+      mutate(shortname = psnu) %>% # Short names for plots
       filter(period == pd)
 
     # Check valid rows
@@ -158,7 +166,7 @@ extract_ovc_tx_overlap <-
     agencies <- {{rep_agency}}
 
     # Summarise data by psnu / indicator
-    df <- df_psnu %>%
+    df <- df_msd %>%
       filter(
         fiscal_year == fy,
         indicator == "OVC_SERV_UNDER_18" &
@@ -224,7 +232,7 @@ extract_ovc_tx_overlap <-
 map_ovc_coverage <-
   function(spdf, df_ovc, terr_raster,
            orglevel = "PSNU",
-           agency = TRUE,
+           agency = FALSE,
            facet = FALSE) {
 
     # Params
@@ -241,24 +249,23 @@ map_ovc_coverage <-
       filter(operatingunit %in% country, type == "OU")
 
     # reformat data
-    if (!agency) {
+    if (agency == TRUE) {
       df_ovc <- df_ovc %>%
-        dplyr::select(proxy_coverage = proxy_coverage_usaid,
+        dplyr::mutate(proxy_coverage = proxy_coverage_usaid,
                       proxy_coverage_max = proxy_coverage_usaid_max) %>%
         filter(proxy_coverage > 0, is.na(flag))
     }
 
     # Append Program data to geo
     spdf_ovc <- spdf %>%
-      #filter(operatingunit %in% country, type == orglevel) %>%
-      filter(operatingunit %in% country) %>%
       left_join(df_ovc, by = c("uid" = "psnuuid")) %>%
       filter(proxy_coverage > 0)
 
     # Get basemap
     basemap <- get_basemap(spdf = spdf,
                            cntry = country,
-                           terr_raster = terr)
+                           terr_raster = terr,
+                           add_admins = TRUE)
 
     # Overlay program data
     ovc_map <- basemap +
@@ -298,16 +305,28 @@ map_ovc_coverage <-
 #'
 plot_ovc_coverage <-
   function(df_ovc,
-           country = NULL) {
+           country = NULL,
+           agency = FALSE) {
 
     # Params
     cntry <- {{country}}
+    agency <- {{agency}}
+
+    # reformat data
+    if (agency == TRUE) {
+      df_ovc <- df_ovc %>%
+        dplyr::mutate(proxy_coverage = proxy_coverage_usaid,
+                      proxy_coverage_max = proxy_coverage_usaid_max,
+                      OVC_HIVSTAT_POS = OVC_HIVSTAT_POS_USAID) %>%
+        filter(proxy_coverage > 0, is.na(flag))
+    }
 
     # Generate labels
     df <- df_ovc %>%
-    mutate(
-      label = paste0(shortname, " (", OVC_HIVSTAT_POS, "/", TX_CURR, ")")
-    )
+      filter(!is.na(proxy_coverage)) %>%
+      mutate(
+        label = paste0(shortname, " (", OVC_HIVSTAT_POS, "/", TX_CURR, ")")
+      )
 
     # Filter by country
     if (!is.null(cntry)) {
@@ -337,7 +356,7 @@ plot_ovc_coverage <-
                  alpha = .8) +
       scale_y_continuous(position = "right",
                          labels = percent,
-                         #limits = c(0, 1), #
+                         limits = c(0, 1), #
                          breaks = c(0, .25, .5, .75, 1)) +
       labs(x = "",y = "") +
       coord_flip() +
@@ -353,8 +372,8 @@ plot_ovc_coverage <-
                label = "Circle Sized by TX_CURR", hjust = "left",
                size = 4, color = grey50k, family = "Gill Sans MT") +
       annotate(geom = "text",
-               x = low$label, y = .89,
-               label = "90% threshold", hjust = "right",
+               x = low$label, y = .905,
+               label = "90% threshold", hjust = "left",
                size = 4, color = grey50k, family = "Gill Sans MT") +
       si_style_xgrid()
 
@@ -372,6 +391,7 @@ plot_ovc_coverage <-
 viz_ovc_coverage <-
   function(spdf, df_ovc, terr_raster, rep_pd,
            country = NULL,
+           age = "<20",
            caption = "",
            filename = "",
            save = FALSE) {
@@ -382,27 +402,44 @@ viz_ovc_coverage <-
     terr <- {{terr_raster}}
     pd <- {{rep_pd}}
     cntry <- {{country}}
+    age_group <- paste0(str_replace({{age}}, "<", "Under "), "yo")
     caption <- {{caption}}
     fname <- {{filename}}
     sgraph <- {{save}}
 
-    # Filter data by country / OU
+    # flag agency data
+    agency <- "proxy_coverage_usaid" %in% names(df)
+
+    # Monitor progress
+    print(cntry)
+
     if (!is.null(cntry)) {
       df <- df %>%
         filter(operatingunit == cntry)
     }
 
+    # Filter data by country / OU
+    if (agency == FALSE) {
+      df <- df %>%
+        filter(proxy_coverage > 0)
+    }
+    else {
+      df <- df %>%
+        filter(proxy_coverage_usaid > 0)
+    }
+
     # Map
-    map <- map_ovc_coverage(df_geo, df, terr)
+    map <- map_ovc_coverage(df_geo, df, terr, agency = agency)
 
     # graph
-    viz <- plot_ovc_coverage(df)
+    viz <- plot_ovc_coverage(df, agency = agency)
 
     # VIZ COMBINED & SAVED
     graph <- (map + viz) +
       plot_layout(nrow = 1) +
       plot_annotation(
-        title = paste0(pd, " | OVC Program Coverage Proxy of TX_CURR (Under 20yo)"),
+        title = paste0(pd, " | OVC Program Coverage Proxy of TX_CURR (",
+                       age_group, ")"),
         subtitle = "The size of circles represents the volume of TX_CURR and the color represents the % coverage",
         caption = caption
       ) +
@@ -414,7 +451,48 @@ viz_ovc_coverage <-
       print(graph)
 
       ggsave(here("Graphics", fname),
-             scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
+             plot = last_plot(), scale = 1.2, dpi = 310,
+             width = 10, height = 7, units = "in")
+
+      # Save individual plot for larger dataset
+      if (nrow(df) > 30) {
+
+        # Map only
+        graph_map <- map +
+          plot_layout(nrow = 1) +
+          plot_annotation(
+            title = paste0(pd, " | OVC Program Coverage Proxy of TX_CURR (",
+                           age_group, ")"),
+            #subtitle = "The size of circles represents the volume of TX_CURR and the color represents the % coverage",
+            caption = caption
+          ) +
+          theme(text = element_text(family = "Gill Sans MT"))
+
+        print(graph_map)
+
+        ggsave(here("Graphics",
+                    str_replace(fname, "Proxy_Coverage", "Proxy_Coverage_Map")),
+               plot = last_plot(), scale = 1.2, dpi = 310,
+               width = 10, height = 7, units = "in")
+
+        # dotplot
+        graph_dotplot <- viz +
+          plot_layout(nrow = 1) +
+          plot_annotation(
+            title = paste0(pd, " | OVC Program Coverage Proxy of TX_CURR (",
+                           age_group, ")"),
+            subtitle = "The size of circles represents the volume of TX_CURR and the color represents the % coverage",
+            caption = caption
+          ) +
+          theme(text = element_text(family = "Gill Sans MT"))
+
+        print(graph_dotplot)
+
+        ggsave(here("Graphics",
+                    str_replace(fname, "Proxy_Coverage", "Proxy_Coverage_DotPlot")),
+               plot = last_plot(), scale = 1.2, dpi = 310,
+               width = 10, height = 7, units = "in")
+      }
     }
 
 
