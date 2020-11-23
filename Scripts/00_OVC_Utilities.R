@@ -212,9 +212,9 @@ extract_ovc_tx_overlap <-
           ovc_group,
           levels = c("USAID Only", "CDC Only", "Mixed",
                      "OVC & TX do not overlap in this district"))
-      )
+      ) %>%
+      clean_psnu()
 
-    glimpse(df)
 
     return(df)
   }
@@ -506,7 +506,8 @@ viz_ovc_coverage <-
 #' @param df OVC vs TX DataFrame
 #' @return ggplot plot
 #'
-heatmap_ovctx_coverage <- function(df) {
+heatmap_ovctx_coverage <-
+  function(df) {
 
     # Heatmap
     df <- df %>%
@@ -529,10 +530,11 @@ heatmap_ovctx_coverage <- function(df) {
       xlab(label = "") +
       ylab(label = "") +
       facet_wrap(~indicator) +
-      ggtitle(label = "Summary of PSNUs with Mixed Agency Targets") +
+      #labs(subtitle = "Summary of PSNUs with Mixed Agency Targets") +
+      labs(subtitle = "Summary by PSNUs & Agency") +
       si_style_xline() +
       theme(legend.position = "none",
-            plot.title = element_text(family = "Gill Sans MT", size = 10),
+            plot.title = element_text(family = "Gill Sans MT"),
             axis.text = element_text(family = "Gill Sans MT"),
             strip.text = element_text(family = "Gill Sans MT", hjust = .5),
             panel.spacing.x = unit(-1, "lines"))
@@ -562,7 +564,7 @@ map_ovctx_coverage <-
 
   # Append Program data to geo
   spdf_ovctx <- spdf %>%
-    filter(operatingunit %in% country, type == "PSNU") %>%
+    #filter(operatingunit %in% country, type == "PSNU") %>%
     left_join(df_ovctx, by = c("uid" = "psnuuid")) %>%
     filter(!is.na(ovc_group)) %>%
     mutate(ovc_colour = case_when(
@@ -600,8 +602,8 @@ map_ovctx_coverage <-
     # ) +
     scale_fill_manual(values = ovc_items) +
     # scale_fill_identity(labels = ovc_labels, guide = "legend") +
-    ggtitle(label = "Agency with OVC_SERV_UNDER_18 \n & TX_CURR <20 Targets in FY21",
-            subtitle = "") +
+    #labs(label = "Agency with OVC_SERV_UNDER_18 \n & TX_CURR <20 Targets in FY21") +
+    labs(subtitle = "Targets by Agency") +
     si_style_map() +
     theme(
       legend.direction = "vertical",
@@ -609,7 +611,7 @@ map_ovctx_coverage <-
       legend.key.width = ggplot2::unit(1, "cm"),
       legend.key.height = ggplot2::unit(.5, "cm"),
       legend.text.align = 0,
-      plot.title = element_text(family = "Gill Sans MT", size = 10)
+      plot.title = element_text(family = "Gill Sans MT")
     )
 
   return(map)
@@ -636,7 +638,7 @@ map_mixed_coverage <-
 
     # Append Program data to geo
     spdf_ovctx <- spdf %>%
-      filter(operatingunit %in% country, type == "PSNU") %>%
+      #filter(operatingunit %in% country, type == "PSNU") %>%
       left_join(df_ovctx, by = c("uid" = "psnuuid")) %>%
       filter(ovc_group == "Mixed")
 
@@ -652,11 +654,11 @@ map_mixed_coverage <-
               color = grey10k, show.legend = F) +
       #scale_fill_manual(values = c(USAID_dkred)) +
       geom_sf(data = spdf_adm0, colour = grey90k, fill = NA, size = 1) +
-      ggtitle(label = "Mixed Agency OVC_SERV_UNDER_18 \n & TX_CURR <20 Targets in FY21",
-              subtitle = "")
+      #labs(subtitle = "Mixed Agency OVC_SERV_UNDER_18 \n & TX_CURR <20 Targets in FY21") +
+      labs(subtitle = "Mixed Targets") +
       si_style_map() +
       theme(
-        plot.title = element_text(family = "Gill Sans MT", size = 10)
+        plot.title = element_text(family = "Gill Sans MT")
       )
 
     return(mixed_map)
@@ -677,28 +679,25 @@ viz_ovctx_coverage <-
            filename = "") {
 
     # Heat
-    heatmap <- heatmap_ovc_tx(df = df_ovctx)
-
-    if (is.null(heatmap)) return(NULL)
+    heatmap <- heatmap_ovctx_coverage(df = df_ovctx)
 
     # Overlap
     ovctx <- map_ovctx_coverage(spdf = spdf_pepfar,
                                 df_ovctx = df_ovctx,
                                 terr_raster = terr)
 
-    if (is.null(ovctx)) return(NULL)
-
     # Mixed
     mixed <- map_mixed_coverage(spdf = spdf_pepfar,
                                 df_ovctx = df_ovctx,
                                 terr_raster = terr)
 
-    if (is.null(mixed)) return(NULL)
+    viz_title <- "FY21 Targets - PSNUs with Mixed Agency OVC_SERV_UNDER_18 & TX_CURR <20"
 
+    # Combine graphs
     viz <- (ovctx + mixed + heatmap) +
       #plot_layout(nrow = 1) +
       plot_annotation(
-        title = "",
+        title = viz_title,
         caption = caption
       )
 
@@ -710,6 +709,40 @@ viz_ovctx_coverage <-
       ggsave(here("./Graphics", filename),
              plot = last_plot(), scale = 1.2, dpi = 310,
              width = 10, height = 7, units = "in")
+
+      if (nrow(df_ovctx) > 30) {
+
+        # Maps only
+        (ovctx + mixed) +
+          plot_annotation(
+            title = viz_title,
+            caption = caption
+          )
+
+        # Save maps
+        ggsave(here("./Graphics",
+                    str_replace(filename,
+                                "OVC_TX_Overlap",
+                                "OVC_TX_Overlap_Maps")),
+               plot = last_plot(), scale = 1.2, dpi = 310,
+               width = 10, height = 7, units = "in")
+
+        # Heatmap only
+        heatmap +
+          plot_annotation(
+            title = viz_title,
+            caption = caption
+          )
+
+        # Save heatmap
+        ggsave(here("./Graphics",
+                    str_replace(filename,
+                                "OVC_TX_Overlap",
+                                "OVC_TX_Overlap_Heatmap")),
+               plot = last_plot(), scale = 1.2, dpi = 310,
+               width = 7, height = 10, units = "in")
+
+      }
     }
 
     return(viz)

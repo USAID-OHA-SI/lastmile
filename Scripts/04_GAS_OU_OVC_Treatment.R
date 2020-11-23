@@ -203,6 +203,8 @@ get_output_name <- function(country,
 
 # VIZ --------------------------------------
 
+    #OVC  Proxy Cov
+
     ## Test OVC  Proxy Cov maps
     cname <- "Zambia"
     #cname <- "Zimbabwe"
@@ -328,18 +330,29 @@ get_output_name <- function(country,
             save = T))
 
 
+    ## OVC x TX Overlap
 
-    # Test OVC x TX Overlap
+    df_ovc_tx <- extract_ovc_tx_overlap(df_msd = df_psnu,
+                                        rep_fy = rep_fy + 1,
+                                        rep_agency = rep_agencies)
 
+    ## Test countries viz
+
+    ## Countries
     cntries <- df_ovc_tx %>%
         filter(!str_detect(operatingunit, " Region$"),
-               !is.na(ovc_group),
-               'Mixed' %in% ovc_group) %>%
+               !is.na(ovc_group)) %>%
+        group_by(operatingunit) %>%
+        summarise(mixed = 'Mixed' %in% ovc_group) %>%
+        ungroup() %>% #View()
+        filter(mixed == TRUE) %>%
         distinct(operatingunit) %>%
         pull()
 
+    cname <- cntries %>% nth(2)
+
     df_cntry <- df_ovc_tx %>%
-        filter(operatingunit == cntries %>% nth(1))
+        filter(operatingunit == cname)
 
     heatmap_ovctx_coverage(df = df_cntry)
 
@@ -352,9 +365,9 @@ get_output_name <- function(country,
                        terr_raster = terr)
 
     ovctx_caption <- paste0(
-        "OHA/SIEI - Data Source: FY20Q3c MSD - USAID & CDC,
+        "OHA/SIEI - Data Source: FY20Q4i MSD - USAID & CDC,
             OVC_SERV_UNDER_18 & TX_CURR, Age < 20\n",
-        toupper(cntries %>% nth(24)), ", Produced on ",
+        toupper(cntries %>% nth(1)), ", Produced on ",
         format(Sys.Date(), "%Y%m%d")
     )
 
@@ -362,18 +375,20 @@ get_output_name <- function(country,
                        df_ovctx = df_cntry,
                        terr_raster = terr,
                        caption = ovctx_caption,
-                       save = FALSE)
+                       #save = FALSE,
+                       save = TRUE,
+                       filename = paste0(rep_pd, "_OVC_TX_Overlap_",
+                                         toupper(cname), "_",
+                                         format(Sys.Date(), "%Y%m%d"), ".png"))
 
     # Batch OVC/TX Coverage
-    #
-    cntries[c(2:4,6:20,21:24)] %>%
-    #cntries[c(1,5,21)] # these are not working
+    cntries %>%
         map(.x, .f = ~ viz_ovctx_coverage(
                 spdf = spdf_pepfar,
                 df_ovctx = df_ovc_tx %>% filter(operatingunit == .x),
                 terr_raster = terr,
                 caption = paste0(
-                    "OHA/SIEI - Data Source: FY20Q3c MSD - USAID & CDC,
+                    "OHA/SIEI - Data Source: FY20Q41 MSD - USAID & CDC,
             OVC_SERV_UNDER_18 & TX_CURR, Age < 20\n",
                     toupper(.x), ", Produced on ",
                     format(Sys.Date(), "%Y%m%d")
