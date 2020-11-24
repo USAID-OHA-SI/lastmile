@@ -101,14 +101,19 @@ get_title <- function(country, var = NULL) {
 get_caption <- function(country,
                         age = "<20",
                         agency = "All Agencies",
-                        var = NULL) {
+                        var = "Proxy Coverage") {
+    # Params
+    var <- str_replace_all({{var}}, "_", " ")
+    agency <- {{agency}}
+    agency <- ifelse(!is.null(agency) & toupper(agency) == "USAID",
+                     "USAID ", " ")
 
+    # Build caption
     caption <- paste0(
-        "OHA/SIEI - Data Source: FY20Q4i MSD - ", agency,
-        "\nProxy Coverage = OVC_HIV_STAT_POS / TX_CURR, Age ",
-            age, "\n",
-        toupper({{country}}), ", Produced on ",
-        format(Sys.Date(), "%Y%m%d")
+        "*NOTE: Scales are truncated to 100% - Data Source: FY20Q4i MSD\n",
+        var, " = OVC_HIV_STAT_POS ", agency, "/ TX_CURR Age ", age, " All Agencies\n",
+        "Shown for PSNUs in which USAID is the only agency with OVC Programming\n",
+        toupper({{country}}), " - Produced by OHA/SIEI on ", format(Sys.Date(), "%Y%m%d")
     )
 
     return(caption)
@@ -225,10 +230,9 @@ get_output_name <- function(country,
     map_ovc_coverage(spdf = spdf_pepfar,
                      df_ovc = df_cntry,
                      terr_raster = terr,
-                     agency = T)
+                     agency = F)
 
-    plot_ovc_coverage(df_ovc = df_cntry) +
-        facet_wrap(~snu1)
+    plot_ovc_coverage(df_ovc = df_cntry)
 
     plot_ovc_coverage(df_ovc = df_ovc_cov, country = cname)
 
@@ -292,7 +296,8 @@ get_output_name <- function(country,
                                        rep_pd = rep_pd)
 
     df_ovc_cov %>%
-        filter(proxy_coverage_usaid > 0, !str_detect(operatingunit, " Region$")) %>%
+        filter(proxy_coverage_usaid > 0,
+               !str_detect(operatingunit, " Region$")) %>%
         distinct(operatingunit) %>%
         pull() %>%
         #nth(8) %>%
@@ -315,7 +320,8 @@ get_output_name <- function(country,
                                        rep_pd = rep_pd)
 
     df_ovc_cov %>%
-        filter(proxy_coverage_usaid > 0, !str_detect(operatingunit, " Region$")) %>%
+        filter(proxy_coverage_usaid > 0,
+               !str_detect(operatingunit, " Region$")) %>%
         distinct(operatingunit) %>%
         pull() %>%
         map(.x, .f = ~ viz_ovc_coverage(
@@ -388,7 +394,7 @@ get_output_name <- function(country,
                 df_ovctx = df_ovc_tx %>% filter(operatingunit == .x),
                 terr_raster = terr,
                 caption = paste0(
-                    "OHA/SIEI - Data Source: FY20Q41 MSD - USAID & CDC,
+                    "OHA/SIEI - Data Source: FY20Q4i MSD - USAID & CDC,
             OVC_SERV_UNDER_18 & TX_CURR, Age < 20\n",
                     toupper(.x), ", Produced on ",
                     format(Sys.Date(), "%Y%m%d")
