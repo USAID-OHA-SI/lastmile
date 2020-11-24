@@ -320,55 +320,6 @@ spdf_pepfar <- build_spdf(
 
 # VIZ --------------------------------------
 
-## What are these orgs?
-
-# spdf_pepfar %>%
-#   dplyr::filter(is.na(type)) %>%
-#   dplyr::select(uid) %>%
-#   plot()
-
-## Geo-units
-
-## OUs [Regional + bilateral] => 28
-# spdf_pepfar %>%
-#   dplyr::filter(!is.na(countryname), type == "OU") %>%
-#   ggplot() +
-#   geom_sf(
-#     aes(fill = countryname),
-#     colour = "white",
-#     size = .5,
-#     show.legend = F
-#   ) +
-#   si_style_map()
-
-
-## Countries [Members of Regional OUs, also used as SNU1] => 44
-# spdf_pepfar %>%
-#   filter(!is.na(countryname), type == "Country") %>%
-#   ggplot() +
-#   geom_sf(
-#     aes(fill = operatingunit),
-#     colour = "white",
-#     size = .5,
-#     show.legend = F
-#   ) +
-#   si_style_map()
-
-
-
-## Individual country basemaps => Ressource Intensive
-# spdf_pepfar %>%
-#   st_set_geometry(NULL) %>%
-#   filter(type == "OU") %>%
-#   pull(operatingunit) %>%
-#   nth(8) %>%                  # This is a test for Cote d'Ivoire
-#   map(.x, .f = ~ get_basemap(
-#         spdf = spdf_pepfar,
-#         cntry = .x,
-#         terr_raster = terr
-#       ))
-
-
 ## Test Individual VL maps
 
 cname <- "Nigeria"
@@ -547,10 +498,10 @@ map_ous %>%
 
 ## Batch: PEDS ALL
 map_ous %>%
-  nth(24) %>%
+  #nth(24) %>%
   map(.x, .f = ~ map_peds_viralloads(
       spdf = spdf_pepfar,
-      df = df_vl_u15,
+      df = df_vl_u15 %>% filter(fundingagency == "USAID"),
       cntry = .x,
       terr_raster = terr,
       save = TRUE,
@@ -561,13 +512,13 @@ map_ous %>%
 
 ## Batch: PEDS by Agency
 map_ous %>%
-  nth(24) %>%
+  #nth(24) %>%
   map(.x, .f = ~ map_peds_viralloads(
       spdf = spdf_pepfar,
       df = df_vl_u15,
       cntry = .x,
       terr_raster = terr,
-      save = F,
+      save = TRUE,
       agency = TRUE,
       facet_rows = 2
     )

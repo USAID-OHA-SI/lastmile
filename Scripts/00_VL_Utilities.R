@@ -303,8 +303,9 @@ map_viralload <-
     # PSNU Geo + VL data
     df_geo2 <- df_geo %>%
       #filter(countryname == country, type == "PSNU") %>%
+      filter(countryname == country) %>%
       left_join(df_vl, by = c("uid" = "psnuuid")) %>%
-      filter(!is.na(VLnC))
+      dplyr::filter(!is.na(VLnC))
 
     # Basemap
     base_map <- get_basemap(spdf = df_geo,
@@ -466,7 +467,11 @@ map_viralloads <-
     print(country)
 
     # Check for valid data
-    if (nrow(df_vl) == 0) {
+    n <- df_vl %>%
+      filter(operatingunit == country) %>%
+      nrow()
+
+    if (n == 0) {
       return(NULL)
     }
 
@@ -557,6 +562,15 @@ map_peds_viralloads <-
     terr <- {{terr_raster}}
     facets <- {{facet_rows}}
 
+    # Check for valid data
+    n <- df_vl %>%
+      filter(operatingunit == country) %>%
+      nrow()
+
+    if (n == 0) {
+      return(NULL)
+    }
+
     # VLS
     m_vls <- map_viralload(
       spdf = df_geo,
@@ -579,7 +593,7 @@ map_peds_viralloads <-
       terr_raster = terr,
       peds = agency,
       caption = FALSE,
-      agency = TRUE,
+      agency = agency,
       facet_rows = facets
     )
 
@@ -596,7 +610,7 @@ map_peds_viralloads <-
         here(
           "Graphics",
           str_replace(
-            get_output_name(country, var = "VLC_S"),
+            get_output_name(country, var = "VLC_S", agency = agency),
             "_ViralLoad_",
             "_ViralLoad_PEDS_")),
         plot = last_plot(),
