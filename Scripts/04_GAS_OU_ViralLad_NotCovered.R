@@ -45,14 +45,14 @@ dir_merdata <- "../../MERDATA"
 
 ## Q3 MER Data
 
-psnu_im <- "^MER_.*_PSNU_IM_.*_20200918_.*.zip$"
+psnu_im <- "^MER_.*_PSNU_IM_.*_20201113_v1_1.zip$"
 
 ## Reporting Filters
 
 rep_agency = c("USAID", "HHS/CDC")
 
 rep_fy = 2020
-rep_qtr = 3
+rep_qtr = 4
 
 rep_pd = rep_fy %>%
   as.character() %>%
@@ -80,9 +80,7 @@ get_title <-
            country = NULL) {
 
   title <- toupper({{country}})
-
   var_name <- toupper({{var}})
-
   var_label <- ""
 
   # Get label
@@ -124,7 +122,7 @@ get_title <-
 #'
 get_caption <-
   function(country,
-           rep_pd = "FY20Q3i",
+           rep_pd = "FY20Q4i",
            var = NULL) {
 
   caption <- paste0("OHA/SIEI - Data Source: ",
@@ -160,12 +158,18 @@ get_caption <-
 #'
 get_output_name <-
   function(country,
-           var = "VLC") {
+           var = "VLC",
+           agency = TRUE) {
 
-  name <- paste0("FY20Q3_ViralLoad_",
+  name <- paste0("FY20Q4_ViralLoad_",
                  toupper({{var}}),
-                 "_",
-                 toupper({{country}}),
+                 "_")
+
+  if (!agency) {
+    name <- paste0(name, "USAID_")
+  }
+
+  name <- paste0(name, toupper({{country}}),
                  "_",
                  format(Sys.Date(), "%Y%m%d"),
                  ".png"
@@ -187,56 +191,56 @@ file_psnu_im <- list.files(
   last()
 
 ## MER PSNU Data
-df_psnu <- vroom(file_psnu_im)
+df_psnu <- read_msd(file_psnu_im)
 
 ## OUs
-df_ous <- df_psnu %>%
-  distinct(operatingunit, operatingunituid) %>%
-  arrange(operatingunit)
-
-df_cntries <- df_psnu %>%
-  distinct(operatingunit, countryname) %>%
-  arrange(operatingunit, countryname)
+# df_ous <- df_psnu %>%
+#   distinct(operatingunit, operatingunituid) %>%
+#   arrange(operatingunit)
+#
+# df_cntries <- df_psnu %>%
+#   distinct(operatingunit, countryname) %>%
+#   arrange(operatingunit, countryname)
 
 ## SNU1
-df_snus <- df_psnu %>%
-  dplyr::select(operatingunit, countryname, snu1, snu1uid) %>%
-  distinct(operatingunit, countryname, snu1, snu1uid) %>%
-  filter(!is.na(snu1)) %>%
-  arrange(operatingunit, countryname, snu1)
+# df_snus <- df_psnu %>%
+#   dplyr::select(operatingunit, countryname, snu1, snu1uid) %>%
+#   distinct(operatingunit, countryname, snu1, snu1uid) %>%
+#   filter(!is.na(snu1)) %>%
+#   arrange(operatingunit, countryname, snu1)
 
 ## PSNU
-df_psnus <- df_psnu %>%
-  dplyr::select(operatingunit,
-                operatingunituid,
-                countryname,
-                snu1,
-                snu1uid,
-                psnu,
-                psnuuid) %>%
-  distinct(operatingunit, countryname, snu1, snu1uid, psnu, psnuuid) %>%
-  arrange(operatingunit, countryname, snu1, psnu)
-
-
-df_psnus %>% View()
+# df_psnus <- df_psnu %>%
+#   dplyr::select(operatingunit,
+#                 operatingunituid,
+#                 countryname,
+#                 snu1,
+#                 snu1uid,
+#                 psnu,
+#                 psnuuid) %>%
+#   distinct(operatingunit, countryname, snu1, snu1uid, psnu, psnuuid) %>%
+#   arrange(operatingunit, countryname, snu1, psnu)
+#
+#
+# df_psnus %>% glimpse()
 
 ## List of Distinct Orgs
 
 ## 2619
-lst_psnuuid <- df_psnus %>%
-  filter(!is.na(psnuuid), psnuuid != "?") %>%
-  distinct(psnuuid) %>%
-  pull()
+# lst_psnuuid <- df_psnus %>%
+#   filter(!is.na(psnuuid), psnuuid != "?") %>%
+#   distinct(psnuuid) %>%
+#   pull()
 
 ## 416
-lst_snu1uid <- df_snus %>%
-  filter(!is.na(snu1uid), snu1uid != "?") %>%
-  distinct(snu1uid) %>%
-  pull()
+# lst_snu1uid <- df_snus %>%
+#   filter(!is.na(snu1uid), snu1uid != "?") %>%
+#   distinct(snu1uid) %>%
+#   pull()
 
 ## 28
-lst_ouuid <- df_ous %>%
-  pull(operatingunituid)
+# lst_ouuid <- df_ous %>%
+#   pull(operatingunituid)
 
 
 ## MER Data Munging
@@ -245,15 +249,15 @@ lst_ouuid <- df_ous %>%
 df_vl <- extract_viralload(df_msd = df_psnu,
                            rep_agency = rep_agency,
                            rep_fy = rep_fy,
-                           lst_ous = lst_ouuid)
+                           rep_pd = rep_qtr)
 
 
 ## VL PEDs
 df_vl_u15 <- extract_viralload(df_msd = df_psnu,
                                rep_agency = rep_agency,
                                rep_fy = rep_fy,
-                               peds = TRUE,
-                               lst_ous = lst_ouuid)
+                               rep_pd = rep_qtr,
+                               peds = TRUE)
 
 
 
@@ -304,7 +308,10 @@ terr <- get_raster(terr_path = dir_terr)
 
 ## GEO
 
-spdf_pepfar <- build_spdf(df_psnu = df_psnu)
+spdf_pepfar <- build_spdf(
+  dir_geo = paste0(dir_geodata, "/VcPepfarPolygons_2020.07.24"),
+  df_psnu = df_psnu
+)
 
 # spdf_pepfar %>%
 #   st_set_geometry(NULL) %>%
@@ -315,59 +322,51 @@ spdf_pepfar <- build_spdf(df_psnu = df_psnu)
 
 ## What are these orgs?
 
-spdf_pepfar %>%
-  dplyr::filter(is.na(type)) %>%
-  dplyr::select(uid) %>%
-  plot()
+# spdf_pepfar %>%
+#   dplyr::filter(is.na(type)) %>%
+#   dplyr::select(uid) %>%
+#   plot()
 
 ## Geo-units
 
 ## OUs [Regional + bilateral] => 28
-spdf_pepfar %>%
-  dplyr::filter(!is.na(countryname), type == "OU") %>%
-  ggplot() +
-  geom_sf(
-    aes(fill = countryname),
-    colour = "white",
-    size = .5,
-    show.legend = F
-  ) +
-  si_style_map()
+# spdf_pepfar %>%
+#   dplyr::filter(!is.na(countryname), type == "OU") %>%
+#   ggplot() +
+#   geom_sf(
+#     aes(fill = countryname),
+#     colour = "white",
+#     size = .5,
+#     show.legend = F
+#   ) +
+#   si_style_map()
 
 
 ## Countries [Members of Regional OUs, also used as SNU1] => 44
-spdf_pepfar %>%
-  filter(!is.na(countryname), type == "Country") %>%
-  ggplot() +
-  geom_sf(
-    aes(fill = operatingunit),
-    colour = "white",
-    size = .5,
-    show.legend = F
-  ) +
-  si_style_map()
+# spdf_pepfar %>%
+#   filter(!is.na(countryname), type == "Country") %>%
+#   ggplot() +
+#   geom_sf(
+#     aes(fill = operatingunit),
+#     colour = "white",
+#     size = .5,
+#     show.legend = F
+#   ) +
+#   si_style_map()
 
-
-## Individual country maps
-spdf_pepfar %>%
-  st_set_geometry(NULL) %>%
-  filter(type == "OU") %>%
-  pull(uid) %>%
-  first() %>%
-  map(.x, .f = ~ map_org(spdf_pepfar, org_uid = .x, title = .x))
 
 
 ## Individual country basemaps => Ressource Intensive
-spdf_pepfar %>%
-  st_set_geometry(NULL) %>%
-  filter(type == "OU") %>%
-  pull(operatingunit) %>%
-  nth(8) %>%                  # This is a test for Cote d'Ivoire
-  map(.x, .f = ~ get_basemap(
-        spdf = spdf_pepfar,
-        cntry = .x,
-        terr_raster = terr
-      ))
+# spdf_pepfar %>%
+#   st_set_geometry(NULL) %>%
+#   filter(type == "OU") %>%
+#   pull(operatingunit) %>%
+#   nth(8) %>%                  # This is a test for Cote d'Ivoire
+#   map(.x, .f = ~ get_basemap(
+#         spdf = spdf_pepfar,
+#         cntry = .x,
+#         terr_raster = terr
+#       ))
 
 
 ## Test Individual VL maps
@@ -395,7 +394,8 @@ map_viralload(
   vl_variable = "VLC",
   cntry = cname,
   terr_raster = terr,
-  agency = T
+  agency = T,
+  facet_rows = 2
 )
 
 map_viralload(
@@ -403,7 +403,9 @@ map_viralload(
   df = df_vl,
   vl_variable = "VLnC",
   cntry = cname,
-  terr_raster = terr
+  terr_raster = terr,
+  agency = T,
+  facet_rows = 2
 )
 
 map_viralloads(
@@ -481,41 +483,41 @@ map_ous <- df_vl %>%
 ## Single Maps
 ##
 ## VLS
-map_ous %>%
-  nth(1) %>%
-  map(.x, .f = ~ map_viralload(
-      spdf = spdf_pepfar,
-      df = df_vl_usaid ,
-      vl_variable = "VLS",
-      cntry = .x,
-      terr_raster = terr,
-      save = TRUE
-    )
-  )
+# map_ous %>%
+#   nth(1) %>%
+#   map(.x, .f = ~ map_viralload(
+#       spdf = spdf_pepfar,
+#       df = df_vl_usaid ,
+#       vl_variable = "VLS",
+#       cntry = .x,
+#       terr_raster = terr,
+#       save = TRUE
+#     )
+#   )
 
 ## VLC
-map_ous %>%
-  map(.x, .f = ~ map_viralload(
-      spdf = spdf_pepfar,
-      df = df_vl_usaid,
-      vl_variable = "VLC",
-      cntry = .x,
-      terr_raster = terr,
-      save = TRUE
-    )
-  )
+# map_ous %>%
+#   map(.x, .f = ~ map_viralload(
+#       spdf = spdf_pepfar,
+#       df = df_vl_usaid,
+#       vl_variable = "VLC",
+#       cntry = .x,
+#       terr_raster = terr,
+#       save = TRUE
+#     )
+#   )
 
 ## VLnC
-map_ous %>%
-  map(.x, .f = ~ map_viralload(
-      spdf = spdf_pepfar,
-      df = df_vl_usaid,
-      vl_variable = "VLnC",
-      cntry = .x,
-      terr_raster = terr,
-      save = TRUE
-    )
-  )
+# map_ous %>%
+#   map(.x, .f = ~ map_viralload(
+#       spdf = spdf_pepfar,
+#       df = df_vl_usaid,
+#       vl_variable = "VLnC",
+#       cntry = .x,
+#       terr_raster = terr,
+#       save = TRUE
+#     )
+#   )
 
 
 ## Batch: ALL by Agency
@@ -530,6 +532,18 @@ map_ous %>%
       facet_rows = 2
     )
   )
+
+## Batch: ALL USAID Only
+map_ous %>%
+  map(.x, .f = ~ map_viralloads(
+    spdf = spdf_pepfar,
+    df = df_vl %>% filter(fundingagency == "USAID"),
+    cntry = .x,
+    terr_raster = terr,
+    save = TRUE,
+    agency = FALSE
+  ))
+
 
 ## Batch: PEDS ALL
 map_ous %>%

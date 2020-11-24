@@ -302,7 +302,7 @@ map_viralload <-
 
     # PSNU Geo + VL data
     df_geo2 <- df_geo %>%
-      filter(countryname == country, type == "PSNU") %>%
+      #filter(countryname == country, type == "PSNU") %>%
       left_join(df_vl, by = c("uid" = "psnuuid")) %>%
       filter(!is.na(VLnC))
 
@@ -462,6 +462,14 @@ map_viralloads <-
     terr <- {{terr_raster}}
     facets <- {{facet_rows}}
 
+    # Notification
+    print(country)
+
+    # Check for valid data
+    if (nrow(df_vl) == 0) {
+      return(NULL)
+    }
+
     # VLS
     m_vls <- map_viralload(
       spdf = df_geo,
@@ -470,7 +478,7 @@ map_viralloads <-
       cntry = country,
       terr_raster = terr,
       caption = FALSE,
-      agency = TRUE,
+      agency = agency,
       facet_rows = facets
     )
 
@@ -482,7 +490,7 @@ map_viralloads <-
       cntry = country,
       terr_raster = terr,
       caption = FALSE,
-      agency = TRUE,
+      agency = agency,
       facet_rows = facets
     )
 
@@ -494,7 +502,7 @@ map_viralloads <-
       cntry = country,
       terr_raster = terr,
       caption = FALSE,
-      agency = TRUE,
+      agency = agency,
       facet_rows = facets
     )
 
@@ -508,7 +516,9 @@ map_viralloads <-
     # Save output
     if (save == TRUE) {
       ggsave(
-        here("Graphics", get_output_name(country, var = "VL")),
+        here("Graphics", get_output_name(country,
+                                         var = "VL",
+                                         agency = agency)),
         plot = last_plot(),
         scale = 1.2,
         dpi = 400,
@@ -556,7 +566,7 @@ map_peds_viralloads <-
       terr_raster = terr,
       peds = TRUE,
       caption = FALSE,
-      agency = TRUE,
+      agency = agency,
       facet_rows = facets
     )
 
@@ -567,7 +577,7 @@ map_peds_viralloads <-
       vl_variable = "VLC",
       cntry = country,
       terr_raster = terr,
-      peds = TRUE,
+      peds = agency,
       caption = FALSE,
       agency = TRUE,
       facet_rows = facets
