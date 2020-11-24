@@ -20,95 +20,112 @@ library(ICPIutilities)
 # GLOBAL -------------------------------------------------
 
   # Dependencies
-  source("./Scripts/00_Geo_Utilities.R")
-  source("./Scripts/00_DREAMS_Utilities.R")
+    source("./Scripts/00_Utilities.R")
+    source("./Scripts/00_Geo_Utilities.R")
+    source("./Scripts/00_DREAMS_Utilities.R")
 
-  dir_data <- here("Data")
-  dir_dataout <- here("Dataout")
+  ## Directories
 
-  dir_geo <- "C:/Users/gsarfaty/Documents/GIS/DATA/Boundaries"
-  dir_terr <- "C:/Users/gsarfaty/Documents/GIS/DATA/Topography"
-  dir_merdata <- "C:/Users/gsarfaty/Documents/DATIM"
+    dir_data <- here("Data")
+    dir_dataout <- here("Dataout")
 
-  dir_img <- here("Images")
-  dir_graphs <- here("Graphics")
+    dir_geo <- "C:/Users/gsarfaty/Documents/GIS/DATA/Boundaries"
+    dir_terr <- "C:/Users/gsarfaty/Documents/GIS/DATA/Topography"
+    dir_merdata <- "C:/Users/gsarfaty/Documents/DATIM"
 
-  # Fiscal Year
-  fy <- 2020
-  pd <- 2
-  curr_pd <- paste0("qtr", pd)
-  remv_pd <- paste0("qtr", 1:4)
-  remv_pd <- remv_pd[!remv_pd == curr_pd]
+    dir_img <- here("Images")
+    dir_graphs <- here("Graphics")
 
-  # Reporting Period & Data Source
-  caption <- "Rep. Period: FY20Q2; Source: FY20Q3c MSD"
+  ## Reporting vars
 
-  # overwrite paths with your own.
-  source("../_setup/00_Setup.R")
+    rep_fy <- 2020
+    rep_qtr <- 4
+    rep_pd <- paste0("FY", str_sub(rep_fy, 3, 4), "Q", rep_qtr)
+    curr_pd <- paste0("qtr", rep_qtr)
+    remv_pd <- paste0("qtr", 1:4)
+    remv_pd <- remv_pd[!remv_pd == curr_pd]
+
+  ## Output Caption
+
+    caption <- "Reporting Period: FY20Q4; Data Source: FY20Q4i MSD"
+
+  ## overwrite paths with your own.
+    source("../_setup/00_Setup.R")
 
 # FUNCTIONS ----------------------------------------------
 
   batch_agyw_prev <-
-    function(country, df, fy, pd, spdf, terr, caption, save = FALSE) {
+    function(df_agyw, country, rep_pd,
+             spdf, terr, caption, save = FALSE) {
 
-    # Notification
-    print(toupper(country))
+      # params
+      cntry <- {{country}}
+      pd <- {{rep_pd}}
 
-    # AGYW_PREV Data
-    agyw <- extract_agyw_prevalence(df_msd = df,
-                                    country = country,
-                                    rep_fy = fy,
-                                    rep_pd = pd)
+      # Notification
+      print(toupper(cntry))
 
-    # Is data valid?
-    if (is.null(agyw)) {
-      stop("No valid data")
+      df <- df_agyw %>%
+        filter(operatingunit == cntry)
+
+      # Is data valid?
+      if (is.null(df) | nrow(df) == 0) {
+        stop("No valid data")
+      }
+
+      # Map - % Completion 13+ Months
+      map <- map_agyw_prevalence(spdf = spdf,
+                                 terr = terr,
+                                 df_agyw = df)
+
+      # Dot plot - % Completion 13+ Months
+      dots <- plot_agyw_prevalence(df_agyw = df, type = "dots")
+
+      # Bar chart - % Dreams Totals
+      bars <- plot_agyw_prevalence(df_agyw = df, type = "bars")
+
+      # Combine graphs
+      graphic <- (map + dots + bars) +
+        plot_annotation(
+          title = "% who completed at least primary package after being in DREAMS for 13+ months",
+          caption = paste0(caption, "\n",
+                           toupper(country), " - Produced on ",
+                           format(Sys.Date(), "%Y%m%d"), " by OHA/SIEI")
+        ) &
+        theme(
+          text = element_text(family = "Gill Sans MT"),
+          plot.title = element_text(family = "Gill Sans MT",
+                                    face = 1, hjust = .5)
+        )
+
+      # Save on demand
+      if (save == TRUE) {
+
+        print(graphic)
+
+        ggsave(here("./Graphics",
+                    paste0(pd,
+                           " - DREAMS_PercentCompletion_13plus_months_",
+                           toupper(country), "_",
+                           format(Sys.Date(), "%Y%m%d"), ".png")),
+               plot = last_plot(),
+               scale = 1.2,
+               dpi = 310,
+               width = 10,
+               height = 7,
+               units = "in")
+      }
+
+      return(graphic)
     }
-
-    # Map - % Completion 13+ Months
-    map <- map_agyw_prevalence(spdf = spdf,
-                               terr = terr,
-                               df_agyw = agyw)
-
-    # Dot plot - % Completion 13+ Months
-    dots <- plot_agyw_prevalence(df_agyw = agyw, type = "dots")
-
-    # Bar chart - % Dreams Totals
-    bars <- plot_agyw_prevalence(df_agyw = agyw, type = "bars")
-
-    # Combine graphs
-    graphic <- (map + dots + bars) +
-      plot_annotation(caption = paste0(toupper(country), " - ", caption)) &
-      theme(plot.title = element_text(size = 9, family = "Gill Sans MT", face = 1))
-
-    print(graphic)
-
-    # Save on demand
-    if (save == TRUE) {
-      ggsave(here("./Graphics",
-                  paste0("FY", str_sub(fy, 3,4),
-                         "Q", pd,
-                         " - DREAMS_PercentCompletion_13plus_months_",
-                         toupper(country), "_",
-                         format(Sys.Date(), "%Y%m%d"), ".png")),
-             plot = last_plot(),
-             scale = 1.2,
-             dpi = 310,
-             width = 10,
-             height = 7,
-             units = "in")
-    }
-
-  }
 
 # DATA ---------------------------------------------------
 
   # MER Data - get the latest MSD PSNU x IM file
-  # This should return
-  # Q3 file => MER_Structured_Datasets_PSNU_IM_FY18-21_20200918_v2_1.zip
+  # Q4 file => MER_Structured_Datasets_PSNU_IM_FY18-21_20201113_v2_1.zip
   file_psnu_im <- list.files(
       path = dir_merdata,
-      pattern = "Structured_.*_PSNU_IM_.*_\\d{8}_v.*.zip",
+      pattern = "^MER_.*_PSNU_IM_.*_20201113_v1_1.zip$",
       recursive = FALSE,
       full.names = TRUE
     ) %>%
@@ -120,7 +137,7 @@ library(ICPIutilities)
 
   # PEPFAR GEO Data
   spdf <- build_spdf(
-    dir_geo = dir_geo,
+    dir_geo = paste0(dir_geo, "/PEPFAR/VcPepfarPolygons_2020.07.24"),
     name = "VcPepfarPolygons.shp",
     df_psnu = df
   )
@@ -128,37 +145,54 @@ library(ICPIutilities)
   # Terrain raster file
   terr <- get_raster(terr_path = dir_terr)
 
+  # DREAMS - AGYW Prevalence
+  df_agyw <- extract_agyw_prevalence(
+    df_msd = df,
+    country = NULL,
+    rep_fy = rep_fy,
+    rep_qtr = rep_qtr
+  )
+
   # Identify OU with DREAMS programs
-  dreams_ous <- df %>%
-    filter(indicator == "AGYW_PREV",
-           !str_detect(operatingunit, " Region$")) %>%
+  dreams_ous <- df_agyw %>%
+    filter(!str_detect(operatingunit, " Region$")) %>%
     distinct(operatingunit) %>%
     pull()
-
-  dreams_ous
 
 # VIZ ----------------------------------------------------------
 
 
-  # Test plots ----------------------------------------------
-  df_agyw <- extract_agyw_prevalence(
-    df_msd = df,
-    country = dreams_ous %>% nth(11)
-  )
+  # Test plots
 
-  map <- map_agyw_prevalence(spdf, terr, df_agyw)
+  dreams_ous
 
-  dots <- plot_agyw_prevalence(df_agyw = df_agyw, type = "dots")
+  cname <- dreams_ous %>% nth(14)
 
-  bars <- plot_agyw_prevalence(df_agyw = df_agyw, type = "bars")
+  df_cntry <- df_agyw %>% filter(operatingunit == cname)
+
+  map <- map_agyw_prevalence(spdf, terr, df_agyw = df_cntry)
+
+  dots <- plot_agyw_prevalence(df_agyw = df_cntry, type = "dots")
+
+  bars <- plot_agyw_prevalence(df_agyw = df_cntry, type = "bars")
 
   (map + dots + bars) +
-    plot_annotation(caption = caption) &
-    theme(plot.title = element_text(size = 9, family = "Gill Sans MT", face = 1))
+    plot_annotation(
+      title = "% who completed at least primary package after being in DREAMS for 13+ months",
+      caption = caption
+    ) &
+    theme(
+      text = element_text(family = "Gill Sans MT"),
+      plot.title = element_text(family = "Gill Sans MT",
+                                face = 1, hjust = .5))
 
   # Batch
   dreams_ous %>%
-    map(.x, .f = ~ batch_agyw_prev(country = .x,
-                                   df, fy, pd, spdf, terr, caption,
+    map(.x, .f = ~ batch_agyw_prev(df_agyw = df_agyw,
+                                   country = .x,
+                                   rep_pd = rep_pd,
+                                   spdf = spdf,
+                                   terr = terr,
+                                   caption = caption,
                                    save = TRUE))
 

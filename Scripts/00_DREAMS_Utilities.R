@@ -12,18 +12,19 @@
 #' @param df_msd Dataframe of MSD PSNU IM
 #' @param country Operatingunit name (Single OU or list)
 #' @param rep_fy Reporting Fiscal Year
-#' @param rep_pd Reporting Period (eg: 2, 4)
+#' @param rep_qtr Reporting Period (eg: 2, 4)
 #' @return agyw_prev data
 #'
 extract_agyw_prevalence <-
-  function(df_msd, country,
+  function(df_msd,
+           country = NULL,
            rep_fy = 2020,
-           rep_pd = 2){
+           rep_qtr = 2){
 
     # Params
     cntry <- {{country}}
     fy <- {{rep_fy}}
-    pd <- {{rep_pd}}
+    pd <- {{rep_qtr}}
 
     # targeted period
     curr_pd <- paste0("qtr", pd)
@@ -37,13 +38,21 @@ extract_agyw_prevalence <-
     df_dreams <- df_msd %>%
       filter(fiscal_year == fy,
              indicator == "AGYW_PREV",
-             !is.na(otherdisaggregate),
-             operatingunit %in% cntry) %>%
+             !is.na(otherdisaggregate))
+
+    # Filter country data
+    if (!is.null(cntry)) {
+      df_dreams <- df_dreams %>%
+        filter(operatingunit %in% cntry)
+    }
+
+    # Continue with filters
+    df_dreams <- df_dreams %>%
       separate(otherdisaggregate, c("drop", "completion"), sep = ", ") %>%
       rename(time_dreams = otherdisaggregate_sub) %>%
+      clean_psnu() %>%
       mutate(
-        shortname = str_remove(psnu, " District$| County$| Municipality$"),
-        shortname = str_remove(shortname, " District$| Metropolitan$"),
+        shortname = psnu,
         time_dreams = case_when(
           time_dreams %in% c("<6 Months in DREAMS",
                              "07-12 Months in DREAMS") ~ "leq12m",
@@ -55,12 +64,12 @@ extract_agyw_prevalence <-
           completion %in% c("DREAMS Not Completed",
                             "DREAMS Only Secondary Completed") ~ "incomplete")
       ) %>%
-      group_by(fiscal_year, operatingunit, psnuuid, psnu, shortname,
+      group_by(fiscal_year, operatingunit, snu1, psnuuid, psnu, shortname,
                indicator, completion, time_dreams) %>%
       summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
       ungroup() %>%
-      select(-indicator, -{{remv_cols}}) %>%
-      group_by(fiscal_year, operatingunit, psnuuid, psnu, shortname) %>%
+      dplyr::select(-indicator, -{{remv_cols}}) %>%
+      group_by(fiscal_year, operatingunit, snu1, psnuuid, psnu, shortname) %>%
       summarise(
         total = sum({{sym_curr_pd}}, na.rm = TRUE),
         ttl_leq12m = sum({{sym_curr_pd}}[time_dreams == "leq12m"], na.rm = TRUE),
@@ -134,7 +143,8 @@ map_agyw_prevalence <-
       scale_fill_viridis_c(option = "magma",
                            direction = -1,
                            labels = percent_format(accuracy = 1)) +
-      ggtitle("% who completed at least primary package\nafter being in DREAMS for 13+ months") +
+      #ggtitle("% who completed at least primary package\nafter being in DREAMS for 13+ months") +
+      labs(subtitle = "% who completed at least primary package")
       si_style_map() +
       theme(
         legend.position =  "bottom",
@@ -159,7 +169,7 @@ plot_agyw_prevalence <-
     plot <- df_agyw %>%
       filter(indicator %in% c("ttl_gt12m", "prp_completed_gt12m")) %>%
       spread(indicator, value) %>%
-      mutate(label = paste0(shortname, " (", ttl_gt12m, ")")) %>%
+      mutate(label = paste0(shortname, " (", comma(ttl_gt12m, 1), ")")) %>%
       ggplot(aes(x = reorder(label, prp_completed_gt12m),
                  y = prp_completed_gt12m)) +
       geom_point(aes(size = prp_completed_gt12m,
@@ -174,17 +184,21 @@ plot_agyw_prevalence <-
       scale_y_continuous(position = "right",
                          labels = percent,
                          limits = c(0, 1),
-                         #breaks = seq(0, 1, 0.5)) +
-                         breaks = c(0, .5, .9, 1)) +
+                         #breaks = seq(0, 1, 0.25)) +
+                         breaks = c(0, .25, .5, .75, .9, 1)) +
       geom_hline(aes(yintercept = .9),
                  color = "gray70",
                  size = .7,
                  linetype = "dashed",
                  alpha = .8) +
-      labs(x = "", y = "") +
+      labs(subtitle = "% who completed at least primary package",
+           x = "", y = "") +
       coord_flip() +
       si_style_xgrid() +
-      ggtitle("% who completed at least primary package\nafter being in DREAMS for 13+ months")
+      theme(
+        axis.text.x = element_text(size = 6)
+      )
+      #ggtitle("% who completed at least primary package\nafter being in DREAMS for 13+ months")
 
     # Bar charts (overwrite previous)
     if (type == "bars") {
@@ -193,7 +207,7 @@ plot_agyw_prevalence <-
       df_agyw <- df_agyw %>%
         filter(indicator %in% c("total", "prp_gt12m", "prp_completed_gt12m")) %>%
         spread(indicator, value) %>%
-        mutate(label = paste0(shortname, " (", total, ")"))
+        mutate(label = paste0(shortname, " (", scales::comma(total, 1), ")"))
 
       # Plot
       plot <-  df_agyw %>%
@@ -201,13 +215,14 @@ plot_agyw_prevalence <-
         geom_bar(stat = "identity", aes(y = 1), fill = grey20k) +
         geom_bar(stat = "identity", aes(y = prp_gt12m), fill = grey40k) +
         scale_fill_manual(values = c(grey20k, grey40k)) +
-        geom_text(aes(y = prp_gt12m, label = percent(prp_gt12m, 1)),
-                  position = position_stack(vjust = 0),
+        geom_text(aes(y = prp_gt12m, label = paste0(" ", percent(prp_gt12m, 1))),
+                  position = position_stack(vjust = 1),
                   hjust = "inward",
-                  color = "white",
+                  color = glitr::grey80k, #"white",
                   size = 4) +
         coord_flip() +
-        labs(title = "% in DREAMS 13+ months out of \n total beneficaries",
+        labs(#title = "% in DREAMS 13+ months out of \n total beneficaries",
+             subtitle = "% in DREAMS 13+ months",
              x = "", y = "") +
         si_style_nolines() +
         theme(legend.position = "none", axis.text.x = element_blank())
