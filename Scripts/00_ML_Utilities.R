@@ -333,3 +333,192 @@ tx_batch <- function(spdf,
 
   return(p)
 }
+
+
+#' Extract TX_ML from MER PSNU Dataset
+#'
+#' @param fy fiscal year
+#' @param snu_prio snuprioritization
+#'
+extract_tx_ltfu <- function(.data,
+                          rep_fy = "2020",
+                          rep_pd = 4,
+                          rep_agency = "USAID",
+                          snu_prio = NULL,
+                          mech_code = NULL) {
+
+  # Params
+  fy <- {{rep_fy}}
+  pd <- {{rep_pd}}
+  agency <- {{rep_agency}}
+  prio <- {{snu_prio}}
+  mechs <- {{mech_code}}
+
+  ## For ZAF Only
+  if (!is.null(snu_prio)) {
+    .data %>%
+      filter(snuprioritization %in% prio)
+  }
+
+  if (!is.null(mechs)) {
+    .data %>%
+      filter(mech_code %in% mechs)
+  }
+
+  ## Common Munging
+  .data %>%
+    filter(
+      fiscal_year == fy,
+      indicator == "TX_ML",
+      standardizeddisaggregate == "Age/Sex/ARTNoContactReason/HIVStatus",
+      typemilitary == 'N',
+      fundingagency %in% agency
+    ) %>%
+    mutate(
+      otherdisaggregate = str_remove(otherdisaggregate, "No Contact Outcome - "),
+      otherdisagg = ifelse(
+        str_detect(otherdisaggregate, "Lost to Follow-Up"),
+        "Lost to Follow-Up",
+        otherdisaggregate),
+      otherdisagg = ifelse(
+        str_detect(otherdisagg, "Refused"),
+        "Refused or Stopped",
+        otherdisagg),
+      otherdisagg = factor(
+        otherdisagg,
+        levels = c("Transferred Out", "Lost to Follow-Up",
+                   "Refused or Stopped", "Died"),
+        labels = c("TO", "LTFU", "Refused or Stopped", "Died"))
+    ) %>%
+    group_by(operatingunit, snu1, snu1uid, psnu, psnuuid,
+             indicator, otherdisagg) %>%
+    summarize_at(vars(targets:cumulative), sum, na.rm = TRUE) %>%
+    ungroup() %>%
+    mutate(
+      prct_ch = round(((qtr2 - qtr1) - qtr1) / qtr1 * 100, 2)
+    ) %>%
+    dplyr::select(operatingunit, snu1, snu1uid, psnuuid, psnu,
+                  otherdisagg, qtr1:qtr4, prct_ch, cumulative) %>%
+    group_by(operatingunit, snu1uid, snu1, psnuuid, psnu) %>%
+    dplyr::mutate(
+      ml_ttl = sum(cumulative, na.rm = T),
+      to_ttl = first(cumulative),
+      to_cum = round(first(cumulative) / sum(cumulative, na.rm = T) * 100, 2),
+      prct = round( cumulative / sum(cumulative, na.rm = T) * 100, 2)
+    ) %>%
+    ungroup() %>%
+    clean_psnu()
+}
+
+#' Create a bar graph of % TO
+#'
+#' @param df Summarized country level TX_ML Data
+#' @param org_level snu1 or psnu
+#'
+plot_tx_ltfu <-
+  function(df_msd,
+           org_level = "psnu",
+           fcolor = NULL) {
+  # Params
+  org <- {{org_level}}
+  fcolor <- {{fcolor}}
+
+  # Plot
+  viz <- df_msd %>%
+    mutate(label = paste0(!!sym(org_level), " (", to_ttl, "/", ml_ttl, ")")) %>%
+    ggplot(aes(reorder(label, to_cum), prct, fill = otherdisagg)) +
+    geom_col(position = position_fill(reverse = TRUE)) +
+    geom_hline(yintercept = .25, color = grey10k, lwd = .3) +
+    geom_hline(yintercept = .50, color = grey10k, lwd = .3) +
+    geom_hline(yintercept = .75, color = grey10k, lwd = .3)
+
+  if (is.null(fcolor)) {
+    viz <- viz +
+      scale_fill_brewer(palette = "Set3", direction = -1)
+  } else {
+    viz <- viz +
+      scale_fill_manual(values = fcolor)
+  }
+
+  viz <- viz  +
+    scale_y_continuous(position = "right", labels = percent) +
+    coord_flip() +
+    labs(x = "", y = "",
+         subtitle = paste0(toupper(org), " (TO / ML)")) +
+    theme_minimal() +
+    theme(
+      legend.position = "bottom",
+      legend.title = element_blank(),
+      panel.grid.major.y = element_blank()
+    )
+
+  print(viz)
+
+  return(viz)
+}
+
+
+#' Map % TO
+#'
+#' @param df country dataset
+#' @param df_shp country geodata
+#' @param label_name colname to be used for labels
+#' @param uid_name colname foreign key from df
+#'
+map_tx_ltfu <-
+  function(df, sf_shp,
+                      label_name = "level5name",
+                      uid_name = "psnuuid") {
+
+  gviz <- sf_shp %>%
+    left_join(df, by = c("uid" = {{uid_name}})) %>%
+    dplyr::filter(!is.na(otherdisagg)) %>%
+    ggplot(data = ., aes(fill = prct, label = {{label_name}})) +
+    geom_sf(color = grey40k) +
+    geom_sf(data = sf_shp, fill = NA, color = grey40k) +
+    geom_sf_text(size = 1.5, color = grey60k) +
+    scale_fill_viridis_c(direction = -1, na.value = NA) +
+    facet_wrap(~otherdisagg, ncol = 2) +
+    theme_void() +
+    theme(
+      legend.position = 'bottom',
+      legend.box.just = "right",
+      legend.title = element_blank(),
+      legend.key.width = unit(2, "cm"),
+      strip.text = element_text(face = "bold"),
+      plot.title = element_text(face = "bold", color = grey80k),
+      plot.subtitle = element_text(face = "italic", margin = unit(c(1,1,10,1), 'pt')),
+      plot.caption = element_text(face = "italic")
+    )
+
+  print(gviz)
+
+  return(gviz)
+}
+
+
+#' Combine Map + Graph
+#'
+#' @param cntry_plot bar chart
+#' @param cntry_map map
+#' @param title graphic title
+#' @param caption graphic footnote
+#'
+viz_tx_ml <- function(cntry_plot, cntry_map,
+                      title = "<COUNTRY XYZ - Descriptive Title>",
+                      #subtitle = "<Key takeway for audience>",
+                      caption = "QAC Product") {
+
+  viz_output <- cntry_map + cntry_plot +
+    plot_layout(ncol = 2, widths = c(2, 1)) +
+    plot_annotation(
+      title = title,
+      #subtitle = subtitle,
+      caption = paste0("OHA/SIEI - ", caption, ", ", Sys.Date())
+    ) +
+    theme(title = element_text(face = "bold"))
+
+  print(viz_output)
+
+  return(viz_output)
+}
