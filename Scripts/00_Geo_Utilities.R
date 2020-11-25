@@ -357,6 +357,95 @@ get_basemap <-
   }
 
 
+#' @title create basemap
+#'
+#' @param terr_raster RasterLayer
+#' @param admin0 Spatial DataFrame of country boundaries
+#' @param admin1 Spatial DataFrame of regions boundaries, optional
+#' @param limits Spatial extent as a vector: Eg south africa = c(15, 35, -38, -20)
+#' @return basemap as ggplot plot
+#'
+create_basemap <-
+  function(terr_raster, admin0,
+           admin1 = NULL,
+           limits = NULL) {
+
+    # Params
+    dta_raster <- {{terr_raster}}
+    df_geo0 <- {{admin0}}
+    df_geo1 <- {{admin1}}
+    ext <- {{limits}}
+
+    # Transform geodata
+    df_geo0 <- df_geo0 %>%
+      sf::st_as_sf() %>%
+      sf::st_transform(., crs = sf::st_crs(4326)) %>%
+      sf::st_zm(drop = TRUE)
+
+    # Terrain
+    if (is.null(dta_raster))
+      stop("Terrain raster data is required.")
+
+    # Crop
+    terr <- dta_raster %>%
+      raster::crop(x = ., y = raster::extend(raster::extent(df_geo0), .2)) %>%
+      raster::mask(x = ., mask = df_geo0)
+
+    # Convert raster data into a spatial data frame
+    trdf <- terr %>%
+      as("SpatialPixelsDataFrame") %>%
+      as.data.frame() %>%
+      dplyr::rename(value = SR_LR) %>%
+      dplyr::filter(value < 210)
+
+    # Basemap
+    m <- ggplot() +
+      geom_tile(data = trdf,
+                aes(x, y, alpha = value)) +
+      scale_alpha(name = "",
+                  range = c(0.6, 0),
+                  guide = F) +
+      geom_sf(
+        data = df_geo0,
+        colour = "white",
+        fill = grey10k,
+        size = 2,
+        alpha = .25
+      )
+
+    # Add sub-admins boundaries
+    if (!is.null(df_geo1) & nrow(df_geo1) > 0) {
+      m <- m +
+        geom_sf(
+          data = df_geo1,
+          fill = "NA",
+          linetype = "dotted",
+          size = .5
+        )
+    }
+
+    # Add country boundaries
+    m <- m +
+      geom_sf(
+        data = df_geo0,
+        colour = grey90k,
+        fill = "NA",
+        size = 1
+      ) +
+      si_style_map()
+
+    # Zoom to South Africa mainland
+    if (!is.null(ext) & length(ext) == 4) {
+      m <- m +
+        ggplot2::xlim(ext[1:2]) +
+        ggplot2::ylim(ext[3:4])
+    }
+
+    return(m)
+  }
+
+
+
 
 #' @title Map specific orgunits
 #'
