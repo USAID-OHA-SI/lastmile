@@ -43,6 +43,12 @@ dir_geo <- "../../GEODATA/PEPFAR"
 dir_terr <- "../../GEODATA/RASTER"
 dir_merdata <- "../../MERDATA"
 
+user <- NULL
+key <- NULL
+
+# Overrite obove with your own
+source("../_setup/00_Setup.R")
+
 ## Q3 MER Data
 
 psnu_im <- "^MER_.*_PSNU_IM_.*_20201113_v1_1.zip$"
@@ -190,58 +196,10 @@ file_psnu_im <- list.files(
   ) %>%
   last()
 
+file_psnu_im
+
 ## MER PSNU Data
 df_psnu <- read_msd(file_psnu_im)
-
-## OUs
-# df_ous <- df_psnu %>%
-#   distinct(operatingunit, operatingunituid) %>%
-#   arrange(operatingunit)
-#
-# df_cntries <- df_psnu %>%
-#   distinct(operatingunit, countryname) %>%
-#   arrange(operatingunit, countryname)
-
-## SNU1
-# df_snus <- df_psnu %>%
-#   dplyr::select(operatingunit, countryname, snu1, snu1uid) %>%
-#   distinct(operatingunit, countryname, snu1, snu1uid) %>%
-#   filter(!is.na(snu1)) %>%
-#   arrange(operatingunit, countryname, snu1)
-
-## PSNU
-# df_psnus <- df_psnu %>%
-#   dplyr::select(operatingunit,
-#                 operatingunituid,
-#                 countryname,
-#                 snu1,
-#                 snu1uid,
-#                 psnu,
-#                 psnuuid) %>%
-#   distinct(operatingunit, countryname, snu1, snu1uid, psnu, psnuuid) %>%
-#   arrange(operatingunit, countryname, snu1, psnu)
-#
-#
-# df_psnus %>% glimpse()
-
-## List of Distinct Orgs
-
-## 2619
-# lst_psnuuid <- df_psnus %>%
-#   filter(!is.na(psnuuid), psnuuid != "?") %>%
-#   distinct(psnuuid) %>%
-#   pull()
-
-## 416
-# lst_snu1uid <- df_snus %>%
-#   filter(!is.na(snu1uid), snu1uid != "?") %>%
-#   distinct(snu1uid) %>%
-#   pull()
-
-## 28
-# lst_ouuid <- df_ous %>%
-#   pull(operatingunituid)
-
 
 ## MER Data Munging
 
@@ -264,7 +222,9 @@ df_vl_u15 <- extract_viralload(df_msd = df_psnu,
 #PEDs - EID
 df_eid <- extract_eid_viralload(df_msd = df_psnu,
                                 rep_agency = rep_agency,
-                                rep_fy = rep_fy)
+                                rep_fy = rep_fy,
+                                #rep_pd = rep_qtr, # For cumulative values
+                                rep_pd = rep_qtr)
 
 
 # TX_ML -- aggregate bad events then divide by TX_CURR_lagged_1
@@ -274,11 +234,10 @@ df_eid <- extract_eid_viralload(df_msd = df_psnu,
 df_tx_ml <- extract_tx_ml(df_msd = df_psnu,
                           rep_agency = rep_agency,
                           rep_fy = rep_fy,
-                          rep_pd = 3)
+                          rep_pd = rep_qtr)
 
 
 # TX_PLP
-
 df_tx_bad <- extract_tx_plp(
   df_msd = df_psnu,
   rep_agency = c("USAID", "NIH/CDC"),
@@ -295,18 +254,16 @@ df_tx_bad %>%
 
 ## PEPFAR OU/Countries
 
-ous <-
-  identify_ouuids(username = user, password = mypwd(key)) %>%
-  as_tibble() %>%
-  rename(countryname = country)
-
+# ous <- identify_ouuids(username = user, password = mypwd(key)) %>%
+#   as_tibble() %>%
+#   rename(countryname = country)
 
 ## Geodata
 
 ## Terrain Raster
 terr <- get_raster(terr_path = dir_terr)
 
-## GEO
+## GEO - PEPFAR Orgs boundaries
 
 spdf_pepfar <- build_spdf(
   dir_geo = paste0(dir_geodata, "/VcPepfarPolygons_2020.07.24"),
@@ -322,7 +279,7 @@ spdf_pepfar <- build_spdf(
 
 ## Test Individual VL maps
 
-cname <- "Nigeria"
+cname <- "Uganda"
 # cname <- "Kenya"
 # cname <- "Ukraine" # Nah
 # cname <- "Lesotho"

@@ -96,6 +96,7 @@ extract_viralload <-
       mutate(VLC = TX_PVLS_D / lag(TX_CURR, 2, order_by = period)) %>%
       ungroup() %>%
       filter(period == pd) %>%
+      clean_psnu() %>%
       mutate(
         VLS = (TX_PVLS / TX_PVLS_D) * VLC,
         VLnC = case_when(
@@ -108,15 +109,7 @@ extract_viralload <-
           lag(TX_CURR, 2, order_by = period) %>% comma(accuracy = 1),
           ")"
         ),
-        psnu_short = case_when(
-          str_detect(psnu, " County$") ~  str_remove(psnu, " County$"),
-          str_detect(psnu, " District$") ~  str_remove(psnu, " District$"),
-          TRUE ~ psnu
-        ),
-        psnu_label = case_when(
-          VLnC > .7 ~ psnu_short,
-          TRUE ~ ""
-        )
+        psnu_short = psnu
       )
 
     return(df_vl)
@@ -203,6 +196,7 @@ extract_peds_viralload <-
 #' @param df_msd     PEPFAR MSD datasets
 #' @param rep_agency Agency (ies)
 #' @param rep_fy     Fiscal Year
+#' @param rep_pd     Quarter, eg: 2 for Q2 data, NUll for cumulative
 #' @param lst_ou     List of OU UIDs
 #' @return EID VL Datasets
 #'
@@ -210,12 +204,18 @@ extract_eid_viralload <-
   function(df_msd,
            rep_agency = "USAID",
            rep_fy = 2020,
+           rep_pd = NULL,
            lst_ous = NULL) {
 
     # Variables
     df <- {{df_msd}}
     agencies <- as.vector({{rep_agency}})
     fy <- {{rep_fy}}
+    pd <- {{rep_pd}}
+    pd <- ifelse(is.null(pd),
+                 paste0("FY", str_sub(fy, 3, 4)),
+                 paste0("FY", str_sub(fy, 3, 4), "Q", pd))
+
     ous <- {{lst_ous}}
 
     # Filter and summarise
@@ -248,16 +248,19 @@ extract_eid_viralload <-
       filter(indicator != "PMTCT_EID") %>%
       group_by(fiscal_year,
                operatingunit,
+               snu1,
                psnuuid,
                psnu,
                indicator,
                fundingagency) %>%
-      summarise(across(starts_with("cumulative"), sum, na.rm = TRUE)) %>%
+      #summarise(across(starts_with("cumulative"), sum, na.rm = TRUE)) %>%
+      summarise(across(qtr1:cumulative, sum, na.rm = TRUE)) %>%
       ungroup() %>%
       reshape_msd(clean = TRUE) %>%
       dplyr::select(-period_type) %>%
       spread(indicator, val) %>%
-      mutate(eid_cov_under2 = (PMTCT_EID_Less_Equal_Two_Months / PMTCT_EID_D))
+      mutate(eid_cov_under2 = (PMTCT_EID_Less_Equal_Two_Months / PMTCT_EID_D)) %>%
+      filter(period == pd)
 
     return(df_eid)
   }
@@ -811,7 +814,7 @@ map_vlc_eid <-
       terr_raster = terr,
       agency = T,
       facet_rows = facets,
-      gen_title = "Early Infant Diagnosis Under Two"
+      gen_title = "Early Infant Diagnosis (Under 2yo)"
     )
 
     m_all <- (vlc + eid) +
@@ -820,7 +823,7 @@ map_vlc_eid <-
         caption = paste0(
           "OHA/SIEI - Data Source: MSD ",
           rep_pd,
-          "_",
+          "i_",
           cntry,
           "_VLC + EID \n",
           "Produced on ",
@@ -831,10 +834,10 @@ map_vlc_eid <-
                        " VLC & EID PROXY COVERAGE SUMMARY")
       )
 
-
-    print(m_all)
-
+    # Print and save
     if (save_all == TRUE) {
+      print(m_all)
+
       ggsave(
         here(
           "Graphics",
