@@ -91,3 +91,20 @@ clean_agency <-
   }
 
 
+#' TODO - Extract text within parenthesis
+#'
+extract_parenthesis <-
+  function(.data, colname = "mech_name") {
+
+    #name <- {{colname}}
+    name <- dplyr::sym(colname)
+
+    #
+    .data %>%
+      mutate(
+        name = if_else(str_detect(name, "\\)"),
+                       str_extract(name, "(?<=\\().*(?=\\))"),
+                       name))
+  }
+
+

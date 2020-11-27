@@ -56,6 +56,11 @@ library(tidytext)
 # DATA --------------------------------------------------------------
 
   ## Geodata
+
+  # Country Boundaries
+  adm0 <- gisr::get_admin0(countries = country)
+
+  # District shapefiles
   spdf <- list.files(
       path = dir_geodata,
       pattern = psnu_shp,
@@ -88,12 +93,24 @@ library(tidytext)
 
   ## Mechanisms
   df_ims <- df_msd %>%
-    filter(fiscal_year == 2020, mech_name != "Dedup", psnuuid != "?") %>%
+    filter(fiscal_year == 2020,
+           fundingagency == "USAID",
+           mech_name != "Dedup",
+           psnuuid != "?",
+           indicator == "TX_CURR") %>%
     distinct(fundingagency, snu1, psnu, psnuuid, mech_code, mech_name) %>%
     clean_agency() %>%
     clean_psnu()
 
-  #df_ims %>% View()
+  #View(df_ims)
+
+  df_ims <- df_ims %>%
+    mutate(
+      mech_name = if_else(
+        str_detect(mech_name, "\\)"),
+        str_extract(mech_name, "(?<=\\().*(?=\\))"),
+        mech_name
+      ))
 
   spdf_ims <- spdf %>%
     left_join(df_ims %>% filter(fundingagency == "USAID"),
@@ -101,7 +118,7 @@ library(tidytext)
     filter(!is.na(mech_code))
 
   ## EID Data
-  df_eid <- list.files(
+  df_eid_machines <- list.files(
       path = dir_data,
       pattern = uga_eid,
       full.names = TRUE
@@ -110,16 +127,27 @@ library(tidytext)
     read_excel(sheet = 1, guess_max = Inf) %>%
     clean_names()
 
-  df_eid <- df_eid %>%
+  df_eid_machines <- df_eid_machines %>%
     mutate(no_device_allocated = as.integer(no_device_allocated)) %>%
     group_by(district, datim_district, datim_district_uid) %>%
     summarise_at(vars(starts_with("no_")), sum, na.rm = TRUE)
 
   #df_eid %>% View()
-  #
 
-  spdf_eid <- spdf %>%
-    left_join(df_eid, by = c("uid" = "datim_district_uid")) %>%
+  spdf_eid_machines <- spdf %>%
+    left_join(df_eid_machines, by = c("uid" = "datim_district_uid")) %>%
+    filter(no_device_allocated > 0)
+
+  # EID Coverage
+  spdf_eid_coverage <- spdf %>%
+    left_join(df_eid %>%
+                filter(fundingagency == "USAID", operatingunit == country),
+              by = c("uid" = "psnuuid")) %>%
+    filter(eid_cov_under2 > 0)
+
+  # EID COV & Machines
+  spdf_eid_mcov <- spdf_eid_coverage %>%
+    left_join(df_eid_machines, by = c("uid" = "datim_district_uid")) %>%
     filter(no_device_allocated > 0)
 
 
@@ -132,48 +160,106 @@ library(tidytext)
 
   basemap
 
-  # Machines
+  # Colors
   RColorBrewer::display.brewer.all()
 
-  values <- df_eid %>%
+  values <- df_eid_machines %>%
     pull(no_device_allocated) %>%
     unique() %>%
     sort()
 
   cols <- RColorBrewer::brewer.pal(n = max(values),
                            name = "YlGnBu")
-
-  basemap +
-    geom_sf(data = spdf_eid,
+  # Machines
+  m_machines <- basemap +
+    geom_sf(data = spdf_eid_machines,
             aes(fill = no_device_allocated),
-            lwd = .3, linetype = "dotted", color = grey40k, alpha = .8) +
+            lwd = .3, linetype = "dotted",
+            color = grey40k, alpha = .8) +
+    geom_sf(data = spdf_eid_machines, fill = NA,
+            lwd = .3, linetype = "dotted", color = grey40k) +
+    geom_sf(data = adm0, fill = NA) +
+    geom_sf_text(data = spdf_eid_machines,
+                 aes(label = no_device_allocated),
+                 size = 2.5, color = grey60k) +
     scale_fill_stepsn(
       breaks = seq(0, max(values), 1),
       guide = guide_colorsteps(even.steps = FALSE),
       na.value = grey40k,
       limits = c(0, max(values)),
       colors = cols) +
-    labs(title = "Uganda - EID POC machine availability",
-         subtitle = "Grey areas have no machines and machines are aggregated at PSNU level",
-         caption = paste0("Data Source: USAID/Uganda - PEPFAR Programs
-         Produced by OHA/SIEI on ", format(Sys.Date(), "%Y-%m%d"))) +
+    labs(subtitle = "EID POC Machines availability, All Agencies") +
     si_style_map()
 
+  m_machines
+
+  # EID Coverage
+  m_eid_cov <- basemap +
+    geom_sf(
+      data = spdf_eid_coverage,
+      aes(fill = eid_cov_under2),
+      na.rm = T,
+      lwd = .3,
+      linetype = "dotted",
+      color = "white",
+      alpha = 0.8
+    ) +
+    geom_sf(data = adm0, fill = NA) +
+    geom_sf_label(data = spdf_eid_mcov,
+                 aes(label = no_device_allocated),
+                 size = 2.5, fill = grey10k, color = grey80k,
+                 label.padding = unit(0.2, "lines"),
+                 label.size = .1) +
+    scale_fill_stepsn(
+      colors = c("#D73027","#FC8D59","#FEE08B","#D9EF8B","#91CF60","#1A9850"),
+      breaks = seq(0, 1, by = 0.25),
+      guide = guide_colorsteps(show.limits = F, even.steps = F),
+      na.value = grey40k,
+      limits = c(0, 1),
+      labels = percent,
+      oob = scales::oob_squish,
+      values = scales::rescale(seq(0, 1, by = 0.25), c(0, 1))
+    ) +
+    labs(subtitle = "EID Coverage Under 2yo, USAID Only") +
+    si_style_map() +
+    theme(
+      legend.position =  "bottom",
+      legend.direction = "horizontal",
+      legend.key.width = ggplot2::unit(1.5, "cm"),
+      legend.key.height = ggplot2::unit(.5, "cm")
+    )
+
+  m_eid_cov
+
+  m_all <- ((m_machines + m_eid_cov) +
+    plot_annotation(
+      title = "Uganda - Early Enfant Diagnosis POC Machines & Coverage",
+      caption = paste0("Data Source: USAID/Uganda - PEPFAR Programs
+           Produced by OHA/SIEI on ", format(Sys.Date(), "%Y-%m%d")),
+      theme = theme(
+        text = element_text(family = "Gill Sans MT"),
+        plot.title = element_text(hjust = .5)
+      )
+    ))
+
+  m_all
 
   ggsave(
     here::here(dir_graphics, "FY20Q4_UGANDA_EID_POC_Machine_Availability.png"),
     plot = last_plot(),
     scale = 1.2,
     dpi = 400,
-    width = 7,
-    height = 10,
+    width = 10,
+    height = 7,
     units = "in"
   )
 
 
+
+
   # Mechs areas
+
   mechs <- df_ims %>%
-    filter(fundingagency == "USAID") %>%
     pull(mech_code) %>%
     unique() %>%
     sort()
