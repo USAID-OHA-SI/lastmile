@@ -359,7 +359,7 @@ plot_ovc_coverage <-
     df <- df_ovc %>%
       filter(!is.na(proxy_coverage)) %>%
       mutate(
-        label = paste0(shortname, " (", OVC_HIVSTAT_POS, "/", TX_CURR, ")")
+        label = paste0(shortname, " (", comma(OVC_HIVSTAT_POS), "/", comma(TX_CURR), ")")
       )
 
     # Filter by country
@@ -374,7 +374,7 @@ plot_ovc_coverage <-
 
     # Plot
     dotplot <- df %>%
-      ggplot(aes(x = reorder(label, proxy_coverage), y = proxy_coverage_max)) +
+      ggplot(aes(x = reorder(label, proxy_coverage_max), y = proxy_coverage_max)) +
       geom_point(aes(size = TX_CURR, fill = proxy_coverage_max),
                  color = grey50k,
                  shape = 21,
@@ -382,7 +382,8 @@ plot_ovc_coverage <-
       scale_size_continuous(range = c(3,8)) +
       scale_color_viridis_c(option = "magma",
                             direction = -1,
-                            aesthetics = c("fill")) +
+                            aesthetics = c("fill"),
+                            limits = c(0, 1)) +
       geom_hline(aes(yintercept = .9),
                  color = "gray70",
                  size = .7,
@@ -407,7 +408,7 @@ plot_ovc_coverage <-
                size = 4, color = grey50k, family = "Gill Sans MT") +
       annotate(geom = "text",
                x = low$label, y = .905,
-               label = "90% threshold", hjust = "left",
+               label = "90%\nthreshold", hjust = "left",
                size = 4, color = grey50k, family = "Gill Sans MT") +
       si_style_xgrid()
 
