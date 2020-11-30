@@ -13,6 +13,7 @@
 #' @param rep_age     Filter <15 or <20
 #' @param rep_agency  Reporting / Funding Agency, as char or vector
 #' @param rep_pd      Reporting Period (eg: FY20Q2)
+#' @param sumlevel    Summary level
 #' @return df
 #'
 extract_ovc_coverage <-
@@ -20,13 +21,30 @@ extract_ovc_coverage <-
            rep_fy = 2020,
            rep_age = "<20",
            rep_agency = NULL,
-           rep_pd = "FY20Q2") {
+           rep_pd = "FY20Q2",
+           sumlevel = "PSNU") {
 
     # All Params
     fy <- {{rep_fy}}
     age <- {{rep_age}}
     agency <- {{rep_agency}}
     pd <- {{rep_pd}}
+    sumlevel <- {{sumlevel}}
+
+    # Dynamic group columns: PSNU
+    grp_cols <- c("fiscal_year", "operatingunit", "snu1uid", "snu1",
+                  "psnuuid", "psnu", "indicator")
+
+    # SNU1
+    if (sumlevel == "SNU1") {
+
+      grp_cols <- c("fiscal_year",
+                    "operatingunit",
+                    "snu1uid",
+                    "snu1",
+                    "indicator")
+    }
+
 
     # Filter and Calculate Proxy Coverage
     df_proxy_ovc_cov <- df_msd %>%
@@ -71,7 +89,8 @@ extract_ovc_coverage <-
 
       # OVC Cov for all agency
       df_proxy_ovc_cov <- df_proxy_ovc_cov %>%
-        group_by(fiscal_year, operatingunit, snu1, psnuuid, psnu, indicator) %>%
+        #group_by(fiscal_year, operatingunit, snu1uid, snu1, psnuuid, psnu, indicator) %>%
+        group_by_at(all_of(grp_cols)) %>%
         summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
         ungroup() %>%
         reshape_msd(clean = TRUE) %>%
@@ -97,7 +116,8 @@ extract_ovc_coverage <-
         mutate(
           indicator = paste0(indicator, "_", fundingagency) # Keep track of agency
         ) %>%
-        group_by(fiscal_year, operatingunit, snu1, psnuuid, psnu, indicator) %>%
+        #group_by(fiscal_year, operatingunit, snu1uid, snu1, psnuuid, psnu, indicator) %>%
+        group_by_at(all_of(grp_cols)) %>%
         summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
         ungroup() %>%
         reshape_msd(clean = TRUE) %>%
@@ -128,9 +148,21 @@ extract_ovc_coverage <-
         )
     }
 
+    # Ungroup
+    df_proxy_ovc_cov <- df_proxy_ovc_cov %>%
+      ungroup()
+
+    # if sumlevel = SNU1, rename snu1 to psnu
+    if (sumlevel == "SNU1") {
+      df_proxy_ovc_cov <- df_proxy_ovc_cov %>%
+        clean_column(colname = "snu1") %>%
+        dplyr::rename_at(vars(starts_with("snu1")), str_replace,
+                              pattern = "snu1",
+                              replacement = "psnu")
+    }
+
     # Filter by reporting period
     df_proxy_ovc_cov <- df_proxy_ovc_cov %>%
-      ungroup() %>%
       mutate(shortname = psnu) %>% # Short names for plots
       filter(period == pd)
 
@@ -226,7 +258,7 @@ extract_ovc_tx_overlap <-
 #' @param df_ovc      Proxy OVC Coverage data
 #' @param terr_raster Terrain Raster
 #' @param orglevel    Org Hierarchy Level
-#' @param agency      Operatingunit(s)
+#' @param agency      agency specific?
 #' @return ggplot plot
 #'
 map_ovc_coverage <-
@@ -284,7 +316,8 @@ map_ovc_coverage <-
       scale_fill_viridis_c(
         option = "magma",
         direction = -1,
-        labels = percent
+        labels = percent,
+        limits = c(0, 1)
       )
       si_style_map() +
       theme(
@@ -301,6 +334,7 @@ map_ovc_coverage <-
 #'
 #' @param df_ovc OVC Datasets
 #' @param country country name
+#' @param agency agency specific?
 #' @return ggplot plot
 #'
 plot_ovc_coverage <-

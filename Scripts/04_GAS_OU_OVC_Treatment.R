@@ -197,7 +197,8 @@ get_output_name <- function(country,
                                        rep_fy = rep_fy,
                                        rep_age = "<20", #age_group, #<15 or <20
                                        rep_agency = NULL, #rep_agency,
-                                       rep_pd = rep_pd)
+                                       rep_pd = rep_pd,
+                                       sumlevel = "SNU1") # PSNU or SNU1
 
 
     ## OVC & TX Overlap
@@ -214,9 +215,9 @@ get_output_name <- function(country,
     #cname <- "Zambia"
     #cname <- "Zimbabwe"
     #cname <- "Nigeria"
-    # cname <- "Ethiopia"
-    #cname <- "Tanzania"
-    cname <- "South Africa"
+    #cname <- "Ethiopia"
+    cname <- "Tanzania"
+    #cname <- "South Africa"
 
     spdf_pepfar %>%
         filter(operatingunit == cname, type == "PSNU") %>%
