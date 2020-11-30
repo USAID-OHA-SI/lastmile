@@ -341,7 +341,7 @@ plot_ovc_coverage <-
     # Plot
     dotplot <- df %>%
       ggplot(aes(x = reorder(label, proxy_coverage), y = proxy_coverage_max)) +
-      geom_point(aes(size = TX_CURR, fill = proxy_coverage),
+      geom_point(aes(size = TX_CURR, fill = proxy_coverage_max),
                  color = grey50k,
                  shape = 21,
                  show.legend = F) +

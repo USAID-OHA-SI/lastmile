@@ -176,7 +176,7 @@ get_output_name <- function(country,
     df_psnu <- vroom(file_psnu_im, col_types = c(.default = "c"))
 
     df_psnu <- df_psnu %>%
-        mutate(across(where(is.numeric), as.integer))
+        dplyr::mutate(across(targets:cumulative, as.integer))
 
     ## Geodata
 
@@ -211,12 +211,12 @@ get_output_name <- function(country,
     #OVC  Proxy Cov
 
     ## Test OVC  Proxy Cov maps
-    cname <- "Zambia"
+    #cname <- "Zambia"
     #cname <- "Zimbabwe"
     #cname <- "Nigeria"
     # cname <- "Ethiopia"
-    # cname <- "Tanzania"
-    # cname <- "South Africa"
+    #cname <- "Tanzania"
+    cname <- "South Africa"
 
     spdf_pepfar %>%
         filter(operatingunit == cname, type == "PSNU") %>%

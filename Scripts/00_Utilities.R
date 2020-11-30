@@ -26,8 +26,8 @@ clean_column <-
       return(NULL)
     }
 
-    # Remove columns
-    rmv_cols <- c(
+    # Remove characters
+    rmv_tail <- c(
         "District",
         "County",
         "District Municipality",
@@ -36,12 +36,16 @@ clean_column <-
       ) %>%
       paste0(" ", ., "$", collapse = "|")
 
-    # Remove extract characters
+    # Remove characters at the end
     .data <- .data %>%
-      mutate_at(.vars = all_of(name), str_remove, pattern = rmv_cols)
+      mutate_at(.vars = all_of(name), str_remove, pattern = rmv_tail)
 
-    # TODO
-    # Remove first 2 chars + space wherever possible
+    # Remove first 2 leading chars
+    rmv_lead <- "^[A-Za-z]{2}[[:space:]]"
+
+    # Remove characters
+    .data <- .data %>%
+      mutate_at(.vars = all_of(name), str_remove, pattern = rmv_lead)
   }
 
 
