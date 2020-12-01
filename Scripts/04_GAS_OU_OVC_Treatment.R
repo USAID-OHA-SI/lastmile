@@ -198,7 +198,7 @@ get_output_name <- function(country,
                                        rep_age = "<20", #age_group, #<15 or <20
                                        rep_agency = NULL, #rep_agency,
                                        rep_pd = rep_pd,
-                                       sumlevel = "SNU1") # PSNU or SNU1
+                                       sumlevel = "PSNU") # PSNU or SNU1
 
 
     ## OVC & TX Overlap
