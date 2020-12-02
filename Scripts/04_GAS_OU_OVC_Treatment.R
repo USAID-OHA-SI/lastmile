@@ -219,12 +219,6 @@ get_output_name <- function(country,
     cname <- "Tanzania"
     #cname <- "South Africa"
 
-    spdf_pepfar %>%
-        filter(operatingunit == cname, type == "PSNU") %>%
-        ggplot() +
-        geom_sf(aes(fill = snu1)) +
-        si_style_map()
-
     df_cntry <- df_ovc_cov %>%
         filter(operatingunit == cname)
 
@@ -236,7 +230,6 @@ get_output_name <- function(country,
     plot_ovc_coverage(df_ovc = df_cntry)
 
     plot_ovc_coverage(df_ovc = df_ovc_cov, country = cname)
-
 
     viz_ovc_coverage(spdf = spdf_pepfar,
                      df_ovc = df_cntry,
@@ -335,6 +328,7 @@ get_output_name <- function(country,
             caption = get_caption(.x, age = "<15", agency = "USAID Only"),
             filename = get_output_name(.x, age = "<15", agency = "USAID Only"),
             save = T))
+
 
 
     ## OVC x TX Overlap

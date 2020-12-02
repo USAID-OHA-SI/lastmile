@@ -359,7 +359,7 @@ plot_ovc_coverage <-
     df <- df_ovc %>%
       filter(!is.na(proxy_coverage)) %>%
       mutate(
-        label = paste0(shortname, " (", comma(OVC_HIVSTAT_POS), "/", comma(TX_CURR), ")")
+        label = paste0(shortname, " (", comma(OVC_HIVSTAT_POS, 1), "/", comma(TX_CURR, 1), ")")
       )
 
     # Filter by country
