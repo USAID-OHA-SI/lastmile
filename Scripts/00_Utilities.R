@@ -164,10 +164,6 @@ clean_countries <-
                            .fns = lookup_country))
   }
 
-spdf %>%
-  st_set_geometry(NULL) %>%
-  as_tibble() %>%
-  clean_countries(colname = "name") %>% View()
 
 #' Extract text
 #' @param txt text containing parenthesis
