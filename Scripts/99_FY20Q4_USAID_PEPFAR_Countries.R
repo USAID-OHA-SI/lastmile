@@ -71,7 +71,7 @@ library(patchwork)
                          returnclass = "sf") %>% 
       dplyr::select(sovereignt, admin, name, adm0_a3) %>% 
       filter(admin != "Antarctica") %>% # Remove Antarctica
-      clean_countries(colname = "admin")
+      glamr::clean_countries(colname = "admin")
     
   ## MER OUxIM
   
