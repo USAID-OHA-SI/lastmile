@@ -266,6 +266,91 @@ extract_eid_viralload <-
   }
 
 
+#' @title VLS & TLD Datasets
+#'
+#' @param df_msd      MSD PNSU x IM
+#' @param rep_agency  Funding Agency(ies)
+#' @param rep_fy      Fiscal Year(s)
+#' @param rep_pd      Full reporting period (eg: FY20Q2)
+#' @return VL Datasets
+#'
+extract_vls_tld <-
+  function(df_msd,
+           rep_agency = c("USAID","HHS/CDC"),
+           rep_fy = c("2019","2020"),
+           rep_pd = "FY20Q2",
+           peds = FALSE,
+           lst_ous = NULL) {
+
+    # Variables
+    df <- {{df_msd}}
+    agencies <- {{rep_agency}}
+    fy <- {{rep_fy}}
+
+    # Calculate VLS & TLD MOT
+    df_vls_tld <- df %>%
+      filter(
+        fundingagency %in% agencies,
+        fiscal_year %in% fy,
+        indicator %in% c("TX_PVLS","SC_ARVDISP","TX_CURR"),
+        standardizeddisaggregate %in% c("DispensedARVBottles",
+                                        "Age/Sex/HIVStatus",
+                                        "Age/Sex/Indication/HIVStatus")
+      ) %>%
+      mutate(
+        indicator = if_else(numeratordenom == "D",
+                            paste0(indicator, "_D"),
+                            indicator)
+      ) %>%
+      group_by(fiscal_year, operatingunit, fundingagency,
+               psnuuid, psnu, indicator, otherdisaggregate) %>%
+      summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
+      ungroup() %>%
+      mutate(
+        indicator = case_when(
+          indicator == "SC_ARVDISP" ~ otherdisaggregate,
+          TRUE ~ indicator)) %>%
+      reshape_msd(clean = TRUE) %>%
+      dplyr::select(-period_type) %>%
+      mutate(
+        val = case_when(
+          str_detect(indicator,"180-count") ~ val*6,
+          str_detect(indicator, "90-count") ~ val*3,
+          TRUE ~ val
+        ),
+        indicator = case_when(
+          indicator %in% c("TX_PVLS_D", "TX_PVLS", "TX_CURR") ~ indicator,
+          str_detect(indicator, "TLD") ~ "TLD",
+          TRUE ~ "other"
+        )) %>%
+      spread(indicator, val) %>%
+      group_by(period, fundingagency, operatingunit, psnuuid, psnu) %>%
+      summarise_at(vars(other:TX_PVLS_D), sum, na.rm = TRUE) %>%
+      ungroup() %>%
+      group_by(period, fundingagency, operatingunit, psnuuid, psnu) %>%
+      mutate(
+        VLC = TX_PVLS_D / lag(TX_CURR, 2, order_by = period),
+        VLS_timesVLC = (TX_PVLS / TX_PVLS_D) * VLC,
+        VLS = (TX_PVLS / TX_PVLS_D),
+        #TLD_MOT = ifelse(other > 0, (TLD / (TLD + other)), NA),
+        TLD_MOT = case_when(
+         other > 0 ~ (TLD / (TLD + other)),
+         TRUE ~ NA_real_),
+        VLS_cat = case_when(
+         VLS <.8 ~ "Less than 80%",
+         VLS >=.8 & VLS <.9 ~ "80-89%",
+         VLS >= .9 ~ "Greater than 90%"),
+        VLS_TLD_ratio = case_when(
+         TLD_MOT > 0 ~ (VLS / TLD_MOT),
+         TRUE ~ NA_real_
+        )) %>%
+      ungroup() %>%
+      filter(period == rep_pd)
+
+    return(df_vls_tld)
+  }
+
+
 #' Map VL S/C/nC
 #'
 #' @param spdf PEPFAR Spatial Data
@@ -852,3 +937,157 @@ map_vlc_eid <-
       )
     }
   }
+
+
+
+#' @title VLS/TLD Maps + Scatter plot
+#'
+#' @param df_vl       DataFrame containing PSNUUID, VLS &TLD_MOT
+#' @param country     Operationgunit
+#' @param rep_agency  Plot only 1 agency (default is NULL for both agencies)
+#' @param caption     Plot caption
+#' @param save        Export plot
+#'
+viz_vls_tld <-
+  function(df_vl, spdf, terr_path,
+           country = NULL,
+           rep_agency = NULL,
+           caption = "",
+           save = FALSE) {
+
+    # filter country dataset
+    if (!is.null(country)) {
+      df_vl <- df_vl %>%
+        filter(operatingunit == country)
+    }
+
+    # Get VLS / TLD Min
+    vls_min <- df_vl %>%
+      filter(!is.na(VLS)) %>%
+      pull(VLS) %>%
+      min()
+
+    tld_min <- df_vl %>%
+      filter(!is.na(TLD_MOT)) %>%
+      pull(TLD_MOT) %>%
+      min()
+
+    lmin <- floor(min(vls_min, tld_min) * 10) / 10
+
+    print(lmin)
+
+    # Country boundaries
+    spdf_adm0 <- spdf %>%
+      filter(type == "OU", operatingunit == country)
+
+    # Country specific data joined to spatial data
+    spdf_cntry <- spdf %>%
+      dplyr::select(-operatingunit) %>%
+      left_join(df_vl, by = c("uid" = "psnuuid"), keep = FALSE) %>%
+      filter(!is.na(operatingunit))
+
+    # Basemap
+    basemap <- gisr::terrain_map(countries = country,
+                           terr_path = terr_path,
+                           mask = TRUE)
+
+    print(basemap)
+
+    # VLS Map
+    map_vls <- basemap +
+      geom_sf(data = spdf_cntry %>% filter(!is.na(VLS)),
+              aes(fill = VLS), lwd = .2, color = grey50k) +
+      geom_sf(data = spdf_adm0, fill = NA, lwd = .2, color = grey30k) +
+      scale_fill_viridis_c(option = "viridis",
+                           alpha = 0.7,
+                           direction = -1,
+                           breaks = rev(seq(1, lmin, -.25)),
+                           limits = c(lmin, 1),
+                           labels = percent) +
+      facet_wrap(~fundingagency, nrow = 2) +
+      ggtitle("Viral Load Suppression") +
+      si_style_map() +
+      theme(
+        legend.position =  "bottom",
+        legend.key.width = ggplot2::unit(1, "cm"),
+        legend.key.height = ggplot2::unit(.5, "cm"),
+        plot.title = element_text(size = 9,
+                                  family = "Source Sans Pro",
+                                  face = 1)
+      )
+
+    #print(map_vls)
+
+    # TLD Map
+    map_tld_mot <- basemap +
+      geom_sf(data = spdf_cntry %>% filter(!is.na(TLD_MOT)),
+              aes(fill = TLD_MOT), lwd = .2, color = grey10k) +
+      geom_sf(data = spdf_adm0, fill = NA, lwd = .2, color = grey30k) +
+      scale_fill_viridis_c(option = "magma",
+                           alpha = 0.7,
+                           direction = -1,
+                           breaks = rev(seq(1, lmin, -.25)),
+                           limits = c(lmin, 1),
+                           labels = percent) +
+      facet_wrap(~fundingagency, nrow = 2) +
+      ggtitle("% TLD Months of TX (MOT) \n out of total ARVs Dispensed") +
+      si_style_map() +
+      theme(
+        legend.position =  "bottom",
+        legend.key.width = ggplot2::unit(1, "cm"),
+        legend.key.height = ggplot2::unit(.5, "cm"),
+        plot.title = element_text(size = 9,
+                                  family = "Source Sans Pro",
+                                  face = 1))
+
+    #print(map_tld_mot)
+
+    # Scatter plot
+    scatter <- df_vl %>%
+      ggplot(aes(x = TLD_MOT, y = VLS)) +
+      geom_point(fill = grey40k,
+                 color = "white",
+                 shape = 21,
+                 size = 6,
+                 alpha = 0.5,
+                 show.legend = F) +
+      scale_x_continuous(limits = c(lmin, 1), labels = percent) +
+      scale_y_continuous(limits = c(lmin, 1), labels = percent) +
+      geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+      facet_wrap(~fundingagency, nrow = 2) +
+      labs(x = "% TLD MOT Dispensed", y = "VLS %") +
+      ggtitle("VLS vs. % TLD Months of TX \n (MOT) Dispensed") +
+      si_style_nolines() +
+      theme(plot.title = element_text(size = 9,
+                                      family = "Source Sans Pro",
+                                      face = 1))
+
+    #print(scatter)
+
+    # VIZ
+    viz <- (map_vls + map_tld_mot + scatter) +
+      plot_annotation(
+        #title = paste0(str_to_upper(country), " | ", rep_pd),
+        caption = paste0(str_to_upper(country),
+                         caption,
+                         format(Sys.Date(), "%Y%m%d")),
+        theme = theme(plot.title = element_text(hjust = .5))
+      )
+
+    if (save == TRUE) {
+
+      print(viz)
+
+      ggsave(here("Graphics",
+                  paste0(rep_pd,
+                         "_VLS_TLD_TLE_Ratio_",
+                         str_to_upper(country),
+                         "_",
+                         format(Sys.Date(), "%Y%m%d"),
+                         ".png")),
+             plot = last_plot(), scale = 1.2, dpi = 310,
+             width = 10, height = 7, units = "in")
+    }
+
+    return(viz)
+}
