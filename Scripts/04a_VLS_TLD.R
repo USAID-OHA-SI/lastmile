@@ -104,7 +104,8 @@ df_VL<-df %>%
 
 # GEO Data Joins
 nga_geo<-st_as_sf(gis_4_sfc$Nigeria) %>%
-  left_join(df_VL, by = c("uid" = "psnuuid"))
+  #left_join(df_VL, by = c("uid" = "psnuuid")) %>%
+  left_join(df_VL, by = c("orgunit_in" = "psnuuid"))
 
 
 # VIZ ------------------------------------------------------------------------------------
