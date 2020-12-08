@@ -88,10 +88,32 @@
                                 rep_pd = rep_pd)
 
 
+  # OUs
+  vls_cntries <- df_vls_tld %>%
+    filter(!is.na(VLS), !str_detect(operatingunit, " Region")) %>%
+    distinct(operatingunit) %>%
+    pull(operatingunit)
+
+
+  vls_cntries
+
+  # NE Countries
+  ne_countries = rnaturalearth::ne_countries(
+      scale = "medium",
+      returnclass = "sf"
+    ) %>%
+    st_set_geometry(NULL) %>%
+    dplyr::select(iso3 = sov_a3, sovereignt, admin)
+
+  # There are 3 countries with diff names
+  #[1] "Cote d'Ivoire" "Eswatini" "Tanzania"
+  setdiff(vls_cntries, ne_countries %>% pull(sovereignt))
+
+
 # VIZ -----------------
 
-  # single country
-  cname <- "Zambia"
+  # single country => DRC
+  cname <- vls_cntries %>% nth(5)
 
   viz_vls_tld(df_vl = df_vls_tld,
               spdf = spdf_pepfar,
@@ -100,11 +122,15 @@
               caption = caption,
               save = FALSE)
 
+  # Batch => Issues to be aware of
+  #vls_cntries[1:17] %>%
+  #vls_cntries[18] %>% # South Sudan [failed], basemape issue
+  #vls_cntries[19:20] %>%
+  #vls_cntries[21] %>% # Ukraine [failed], faceting issue
+  #vls_cntries[22:24] %>%
+
   # Batch
-  df_vls_tld %>%
-    filter(!is.na(VLS), !str_detect(operatingunit, " Region")) %>%
-    distinct(operatingunit) %>%
-    pull(operatingunit) %>%
+  vls_cntries %>%
     map(.x, .f = ~ viz_vls_tld(df_vl = df_vls_tld,
                                spdf = spdf_pepfar,
                                terr_path = dir_terr,

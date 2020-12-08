@@ -955,6 +955,9 @@ viz_vls_tld <-
            caption = "",
            save = FALSE) {
 
+    # params
+    cntry <- {{country}}
+
     # filter country dataset
     if (!is.null(country)) {
       df_vl <- df_vl %>%
@@ -974,11 +977,19 @@ viz_vls_tld <-
 
     lmin <- floor(min(vls_min, tld_min) * 10) / 10
 
-    print(lmin)
+    cat("\n", str_to_upper(country), " Min VLS/TLD = ", lmin, "\n")
 
     # Country boundaries
     spdf_adm0 <- spdf %>%
       filter(type == "OU", operatingunit == country)
+
+    # PSNU Boundaries: NE does not have South Sudan's admin1 boundaries
+    spdf_adm1 <- NULL
+
+    if (country == "South Sudan") {
+      spdf_adm1 <- spdf %>%
+        filter(type == "PSNU", operatingunit == country)
+    }
 
     # Country specific data joined to spatial data
     spdf_cntry <- spdf %>%
@@ -987,65 +998,96 @@ viz_vls_tld <-
       filter(!is.na(operatingunit))
 
     # Basemap
-    basemap <- gisr::terrain_map(countries = country,
-                           terr_path = terr_path,
-                           mask = TRUE)
 
-    print(basemap)
+    # Match NE Sovereignt names
+    cntry <- case_when(
+      cntry == "Cote d'Ivoire" ~ "Ivory Coast",
+      cntry == "Tanzania" ~ "United Republic of Tanzania",
+      cntry == "Eswatini" ~ "Swaziland",
+      TRUE ~ cntry
+    )
+
+    # Get basemap
+    basemap <- NULL
+
+    # Use PEPFAR Boudaries
+    if (!is.null(spdf_adm1)) {
+      basemap <- gisr::terrain_map(countries = cntry,
+                                   adm0 = spdf_adm0,
+                                   adm1 = spdf_adm1,
+                                   terr_path = terr_path,
+                                   mask = TRUE)
+    }
+    # Use NE Boundaries
+    else {
+      basemap <- gisr::terrain_map(countries = cntry,
+                                   terr_path = terr_path,
+                                   mask = TRUE)
+    }
 
     # VLS Map
-    map_vls <- basemap +
-      geom_sf(data = spdf_cntry %>% filter(!is.na(VLS)),
-              aes(fill = VLS), lwd = .2, color = grey50k) +
-      geom_sf(data = spdf_adm0, fill = NA, lwd = .2, color = grey30k) +
-      scale_fill_viridis_c(option = "viridis",
-                           alpha = 0.7,
-                           direction = -1,
-                           breaks = rev(seq(1, lmin, -.25)),
-                           limits = c(lmin, 1),
-                           labels = percent) +
-      facet_wrap(~fundingagency, nrow = 2) +
-      ggtitle("Viral Load Suppression") +
-      si_style_map() +
-      theme(
-        legend.position =  "bottom",
-        legend.key.width = ggplot2::unit(1, "cm"),
-        legend.key.height = ggplot2::unit(.5, "cm"),
-        plot.title = element_text(size = 9,
-                                  family = "Source Sans Pro",
-                                  face = 1)
-      )
+    map_vls <- basemap
 
-    #print(map_vls)
+    spdf_vls = spdf_cntry %>% filter(!is.na(VLS))
+
+    if (nrow(spdf_vls) > 0) {
+
+      map_vls <- map_vls +
+        geom_sf(data = spdf_vls,
+                aes(fill = VLS), lwd = .2, color = grey10k) +
+        geom_sf(data = spdf_adm0, fill = NA, lwd = .2, color = grey30k) +
+        scale_fill_viridis_c(option = "viridis",
+                             alpha = 0.7,
+                             direction = -1,
+                             breaks = rev(seq(1, lmin, -.25)),
+                             limits = c(lmin, 1),
+                             labels = percent) +
+        facet_wrap(~fundingagency, nrow = 2) +
+        ggtitle("Viral Load Suppression") +
+        si_style_map() +
+        theme(
+          legend.position =  "bottom",
+          legend.key.width = ggplot2::unit(1, "cm"),
+          legend.key.height = ggplot2::unit(.5, "cm"),
+          plot.title = element_text(size = 9,
+                                    family = "Source Sans Pro",
+                                    face = 1)
+        )
+    }
 
     # TLD Map
-    map_tld_mot <- basemap +
-      geom_sf(data = spdf_cntry %>% filter(!is.na(TLD_MOT)),
-              aes(fill = TLD_MOT), lwd = .2, color = grey10k) +
-      geom_sf(data = spdf_adm0, fill = NA, lwd = .2, color = grey30k) +
-      scale_fill_viridis_c(option = "magma",
-                           alpha = 0.7,
-                           direction = -1,
-                           breaks = rev(seq(1, lmin, -.25)),
-                           limits = c(lmin, 1),
-                           labels = percent) +
-      facet_wrap(~fundingagency, nrow = 2) +
-      ggtitle("% TLD Months of TX (MOT) \n out of total ARVs Dispensed") +
-      si_style_map() +
-      theme(
-        legend.position =  "bottom",
-        legend.key.width = ggplot2::unit(1, "cm"),
-        legend.key.height = ggplot2::unit(.5, "cm"),
-        plot.title = element_text(size = 9,
-                                  family = "Source Sans Pro",
-                                  face = 1))
+    map_tld_mot <- basemap
 
-    #print(map_tld_mot)
+    spdf_tld <- spdf_cntry %>% filter(!is.na(TLD_MOT))
+
+    if (nrow(spdf_tld) > 0) {
+
+      map_tld_mot <- map_tld_mot +
+        geom_sf(data = spdf_tld,
+                aes(fill = TLD_MOT), lwd = .2, color = grey10k) +
+        geom_sf(data = spdf_adm0, fill = NA, lwd = .2, color = grey30k) +
+        scale_fill_viridis_c(option = "magma",
+                             alpha = 0.7,
+                             direction = -1,
+                             breaks = rev(seq(1, lmin, -.25)),
+                             limits = c(lmin, 1),
+                             labels = percent) +
+        facet_wrap(~fundingagency, nrow = 2) +
+        ggtitle("% TLD Months of TX (MOT) \n out of total ARVs Dispensed") +
+        si_style_map() +
+        theme(
+          legend.position =  "bottom",
+          legend.key.width = ggplot2::unit(1, "cm"),
+          legend.key.height = ggplot2::unit(.5, "cm"),
+          plot.title = element_text(size = 9,
+                                    family = "Source Sans Pro",
+                                    face = 1))
+    }
 
     # Scatter plot
     scatter <- df_vl %>%
       ggplot(aes(x = TLD_MOT, y = VLS)) +
-      geom_point(fill = grey40k,
+      geom_point(fill = grey50k,
                  color = "white",
                  shape = 21,
                  size = 6,
@@ -1053,7 +1095,7 @@ viz_vls_tld <-
                  show.legend = F) +
       scale_x_continuous(limits = c(lmin, 1), labels = percent) +
       scale_y_continuous(limits = c(lmin, 1), labels = percent) +
-      geom_abline(intercept = 0, slope = 1, linetype = "dashed") +
+      geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = grey70k) +
       facet_wrap(~fundingagency, nrow = 2) +
       labs(x = "% TLD MOT Dispensed", y = "VLS %") +
       ggtitle("VLS vs. % TLD Months of TX \n (MOT) Dispensed") +
@@ -1061,8 +1103,6 @@ viz_vls_tld <-
       theme(plot.title = element_text(size = 9,
                                       family = "Source Sans Pro",
                                       face = 1))
-
-    #print(scatter)
 
     # VIZ
     viz <- (map_vls + map_tld_mot + scatter) +
