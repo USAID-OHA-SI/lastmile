@@ -138,11 +138,7 @@ extract_tx_plp <-
         indicator %in% c("TX_CURR", "TX_NEW", "TX_RTT"),
         standardizeddisaggregate %in% c("Total Numerator")
       ) %>%
-      mutate(
-        fundingagency = if_else(
-          fundingagency == "HHS/CDC",
-          "CDC",
-          fundingagency))
+      glamr::clean_agency()
 
     # Filter out OUs
     if (!is.null(ous)) {
@@ -165,12 +161,7 @@ extract_tx_plp <-
       filter(
         period == curr_pd | (period == prev_pd & indicator == "TX_CURR")
       ) %>%
-      mutate(
-        # period = case_when(
-        #   period == "fy2020q2" ~ "Q2",
-        #   period == "fy2020q3" ~ "Q3")
-        period = toupper(str_sub(period, 7, 8))
-      ) %>%
+      mutate(period = toupper(str_sub(period, 7, 8))) %>%
       pivot_wider(names_from = c(indicator, period),
                   values_from = val) %>%
       rowwise() %>%
@@ -186,7 +177,11 @@ extract_tx_plp <-
         df_tx_ml,
         by = c("operatingunit", "psnuuid", "psnu", "fundingagency")
       ) %>%
-      mutate(TX_ML_PLP = round((TX_ML_bad / TX_BADEVENTS_DENOM), digits = 3))
+      mutate(
+        TX_ML_PLP = round((TX_ML_bad / TX_BADEVENTS_DENOM), digits = 3)
+      ) %>%
+      clean_psnu()
+
 
     return(df_tx_bad)
   }
@@ -221,14 +216,6 @@ tx_graph <-
 
     p <- df_geo2 %>%
       mutate(
-        # psnu_short = case_when(
-        #   str_detect(psnu, " County$") ~ str_replace_all(psnu, " County$", ""),
-        #   str_detect(psnu, " District$") ~ str_replace_all(psnu, " District$",""),
-        #   str_detect(psnu, " Municipality$") ~ str_replace_all(psnu, " Municipality$",""),
-        #   str_detect(psnu, " Metropolitan$") ~ str_replace_all(psnu, " Metropolitan$",""),
-        #   str_detect(psnu, " District$") ~ str_replace_all(psnu, " District$",""),
-        #   TRUE ~ psnu
-        # ),
         yorder = tidytext::reorder_within(psnu_short, {{mapvar}}, fundingagency),
         rank = percent_rank({{mapvar}})
       ) %>%
@@ -304,12 +291,14 @@ tx_batch <- function(spdf,
         Sys.Date(),
         ", Missing data shown in gray on map."
       ),
-      title = paste0(str_to_upper(country), " - TX_ML Patient Loss Proxy")
+      title = paste0(str_to_upper(country), " - TX_ML Patient Loss Proxy"),
+      theme = theme(plot.title = element_text(hjust = .5))
     )
 
-  print(p)
-
   if (save == TRUE) {
+
+    print(p)
+
     ggsave(
       here("./Graphics",
            paste0(

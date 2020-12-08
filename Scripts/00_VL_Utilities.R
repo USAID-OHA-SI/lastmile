@@ -802,6 +802,9 @@ map_generic <-
         )
     }
 
+    theme_map <- theme_map  +
+      geom_sf(data = df_geo0, colour = grey90k, fill = "NA", size = 1)
+
     if (agency == TRUE) {
       theme_map <- theme_map +
         facet_wrap( ~ fundingagency, nrow = facet_rows)

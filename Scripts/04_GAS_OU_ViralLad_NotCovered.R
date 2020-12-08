@@ -4,6 +4,7 @@
 ##  PURPOSE: Geo-depiction of VL - % not covered
 ##  LICENCE: MIT
 ##  DATE:    2020-09-04
+##  UPDATED: 2020-12-08
 
 # Libraries
 library(tidyverse)
@@ -240,7 +241,7 @@ df_tx_ml <- extract_tx_ml(df_msd = df_psnu,
 # TX_PLP
 df_tx_bad <- extract_tx_plp(
   df_msd = df_psnu,
-  rep_agency = c("USAID", "NIH/CDC"),
+  rep_agency = c("USAID", "HHS/CDC"),
   rep_fy = rep_fy,
   rep_pd = rep_qtr
 )
@@ -251,12 +252,6 @@ df_tx_bad %>%
   group_by(psnu) %>%
   summarise(sum = (TX_ML_PLP))
 
-
-## PEPFAR OU/Countries
-
-# ous <- identify_ouuids(username = user, password = mypwd(key)) %>%
-#   as_tibble() %>%
-#   rename(countryname = country)
 
 ## Geodata
 
@@ -270,21 +265,13 @@ spdf_pepfar <- build_spdf(
   df_psnu = df_psnu
 )
 
-# spdf_pepfar %>%
-#   st_set_geometry(NULL) %>%
-#   prinf()
-
 
 # VIZ --------------------------------------
 
 ## Test Individual VL maps
 
-cname <- "Uganda"
-# cname <- "Kenya"
-# cname <- "Ukraine" # Nah
-# cname <- "Lesotho"
-# cname <- "Zambia"
-# cname <- "Botswana"
+cname <- "Zambia"
+
 
 map_viralload(
   spdf = spdf_pepfar,
@@ -380,52 +367,13 @@ map_generic(
 # BATCH VIZ ---------------------------------------------------------------
 
 
-## Batch mapping
+## Batch VL mapping
 
 map_ous <- df_vl %>%
   filter(!str_detect(operatingunit, " Region$"),
          !operatingunit %in% c("none")) %>%
   distinct(operatingunit) %>%
   pull()
-
-## Single Maps
-##
-## VLS
-# map_ous %>%
-#   nth(1) %>%
-#   map(.x, .f = ~ map_viralload(
-#       spdf = spdf_pepfar,
-#       df = df_vl_usaid ,
-#       vl_variable = "VLS",
-#       cntry = .x,
-#       terr_raster = terr,
-#       save = TRUE
-#     )
-#   )
-
-## VLC
-# map_ous %>%
-#   map(.x, .f = ~ map_viralload(
-#       spdf = spdf_pepfar,
-#       df = df_vl_usaid,
-#       vl_variable = "VLC",
-#       cntry = .x,
-#       terr_raster = terr,
-#       save = TRUE
-#     )
-#   )
-
-## VLnC
-# map_ous %>%
-#   map(.x, .f = ~ map_viralload(
-#       spdf = spdf_pepfar,
-#       df = df_vl_usaid,
-#       vl_variable = "VLnC",
-#       cntry = .x,
-#       terr_raster = terr,
-#       save = TRUE
-#     )
-#   )
 
 
 ## Batch: ALL by Agency
@@ -506,8 +454,6 @@ map_ous %>%
   )
 
 
-
-
 # Batch: TX_ML_PLP map
 
 df_tx_bad %>%
@@ -529,7 +475,6 @@ df_tx_bad %>%
          !is.na(TX_ML_PLP)) %>%
   distinct(operatingunit) %>%
   pull() %>%
-  #nth(24) %>% #Zambia
   map(.x, .f = ~ tx_batch(
     spdf = spdf_pepfar,
     df_gen = df_tx_bad,
@@ -543,6 +488,22 @@ df_tx_bad %>%
     gen_title = "",
     four_parts = F)
   )
+
+# re-apply psnu cleanup for SA
+tx_batch(
+    spdf = spdf_pepfar,
+    df_gen = df_tx_bad %>%
+      filter(operatingunit == "South Africa") %>%
+      clean_psnu(),
+    mapvar = TX_ML_PLP,
+    cntry = "South Africa",
+    rep_pd = rep_pd,
+    terr_raster = terr,
+    save = TRUE,
+    agency = TRUE,
+    facet_rows = 1,
+    gen_title = "",
+    four_parts = F)
 
 
 

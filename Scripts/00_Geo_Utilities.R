@@ -312,11 +312,8 @@ get_basemap <-
 
     # Basemap
     m <- ggplot() +
-      geom_tile(data = trdf,
-                aes(x, y, alpha = value)) +
-      scale_alpha(name = "",
-                  range = c(0.6, 0),
-                  guide = F) +
+      geom_tile(data = trdf, aes(x, y, alpha = value)) +
+      scale_alpha(name = "", range = c(0.6, 0), guide = F) +
       geom_sf(
         data = df_geo0,
         colour = "white",
