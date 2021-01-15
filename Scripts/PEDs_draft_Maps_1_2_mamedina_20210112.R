@@ -97,9 +97,9 @@ map2_geo<-st_as_sf(gis_vc_sfc$VcPepfarPolygons.shp) %>%
 
 map<-terrain_map(countries = "Zambia", terr_path = si_path(type = "path_raster"), mask = TRUE) +
   geom_sf(data = peds_geo %>% filter(!is.na(share)), aes(fill = share), lwd = .2, color = grey10k) +
-  geom_sf_text(data = peds_geo %>% filter(!is.na(share)), aes(label=percent(share, .1)), color=usaid_red, size = .2)+
+  geom_sf_text(data = peds_geo %>% filter(!is.na(share)), aes(label=percent(share, .1)), color=usaid_red, size = 1)+
   geom_sf(data = zam1, fill = NA, lwd = .2, color = grey30k) +
-  scale_fill_si(palette = "moody_blues", discrete=FALSE, alpha=0.9, reverse = FALSE,
+  scale_fill_si(palette = "moody_blues", discrete=FALSE, alpha=0.9, reverse = TRUE,
                 breaks = c(0,0.25,0.5,0.75, 1.00),
                 limits = c(0, 1.00),
                 labels= percent)+
@@ -108,32 +108,33 @@ map<-terrain_map(countries = "Zambia", terr_path = si_path(type = "path_raster")
     legend.position =  "bottom",
     legend.key.width = ggplot2::unit(1, "cm"),
     legend.key.height = ggplot2::unit(.5, "cm"))+
-  ggtitle("Zambia TX_CURR FY21 Targets | % Share by IP \n Source: SNU Level MSD")+
+  ggtitle("Zambia TX_CURR FY21 Targets | % Share by IP")+
   # theme(plot.title = element_text(size = 9, family = "Source Sans Pro", face=1))+
   facet_wrap(~mech_name, ncol = 3, labeller = label_wrap_gen(30))
-  
 
 print(map)
 
-ggsave(here("Graphics", "Zambia_Map1_labels.png"),
+ggsave(here("Graphics", "Zambia_Map1.png"),
        scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
 
 
 
 map2<-terrain_map(countries = "Zambia", terr_path = si_path(type = "path_raster"), mask = TRUE) +
   geom_sf(data = map2_geo %>% filter(!is.na(APR), !is.infinite(APR)), aes(fill = APR), lwd = .2, color = grey10k) +
+  geom_sf_text(data = map2_geo %>% filter(!is.na(APR), !is.infinite(APR)), aes(label=percent(APR, .1)), color=usaid_red, size = 1)+
   geom_sf(data = zam1, fill = NA, lwd = .2, color = grey30k) +
-  scale_fill_si(palette = "moody_blues", discrete=FALSE, alpha=0.9, reverse = FALSE,
-              breaks = c(0,0.25,0.5,0.75, 1.00,1.25,1.5,2.0),
+  scale_fill_si(palette = "moody_blues", discrete=FALSE, alpha=0.9, reverse = TRUE,
+              breaks = c(0,0.25,0.5,0.75, 1.00,1.25,1.5, 1.75, 2.0),
               limits = c(0, 2.00),
               labels=percent)+
+  si_style_map() +
   theme(
     legend.position =  "bottom",
-    legend.key.width = ggplot2::unit(1, "cm"),
+    legend.key.width = ggplot2::unit(1.5, "cm"),
     legend.key.height = ggplot2::unit(.5, "cm"))+
   ggtitle("Zambia TX_CURR FY20 % Target Achievements")+
   # theme(plot.title = element_text(size = 9, family = "Source Sans Pro", face=1))+
-  facet_wrap(~mech_name, nrow = 3, ncol = 3)
+  facet_wrap(~mech_name, ncol = 4, labeller = label_wrap_gen(30))
 
 print(map2)
 
