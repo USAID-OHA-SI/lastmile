@@ -1,10 +1,10 @@
 #Mamedina
 #01122021 - DRAFT PEDs Maps
 
-#MAp 1 a map showing IPs by SNU by country 
+#MAp 1 a map showing IPs by SNU by country
 #what % of the FY21 peds TX_CURR targets each IP has
 
-#Map 2: a map showing IPs by SNU by country what % of the peds TX_CURR APR20 results to targets 
+#Map 2: a map showing IPs by SNU by country what % of the peds TX_CURR APR20 results to targets
 #each IP achieved (ie what % of targets were achieved) - from 0 - 100%?
 
 
@@ -31,11 +31,24 @@ peds_psnu <- list.files(path = si_path(type="path_msd"),
                         full.names = TRUE) %>%
   read_msd()
 
+# BK Note: you can read data from zipped files
+# peds_psnu <- list.files(path = si_path(type="path_msd"),
+#                         pattern = "Structured_.*_PSNU_IM.*_20201218_v2_1.zip",
+#                         full.names = TRUE) %>%
+#   read_msd()
+
 # GEO DATA ------------------------------------------------------------
 
 gis_vc_sfc <- list.files(si_path(type="path_vector"), pattern = "Vc.*.shp$", recursive = T, full.names = T) %>%
   set_names(basename(.) %>% str_remove("_.*.shp$")) %>%
   map(read_sf)
+
+# BK Note: always assume other analysts have multiple versions of the file
+# gis_vc_sfc <- list.files(paste0(si_path(type="path_vector"), "/VcPepfarPolygons_2020.07.24"),
+#                          pattern = "Vc.*.shp$",
+#                          recursive = T, full.names = T) %>%
+#   set_names(basename(.) %>% str_remove("_.*.shp$")) %>%
+#   map(read_sf)
 
 zam1 <- get_adm_boundaries("ZMB", adm_level = 1, geo_path = si_path(type="path_vector")) %>%
   st_as_sf() %>%
@@ -100,7 +113,7 @@ zam_USAID<-peds_psnu %>% filter(fiscal_year=="2021",countryname=="Zambia",
 zam_ped<-rbind(zam_cdc, zam_USAID)
 
 
- # a map showing IPs by SNU by country what % of the peds TX_CURR APR20 
+ # a map showing IPs by SNU by country what % of the peds TX_CURR APR20
  #results to targets each IP achieved (ie what % of targets were achieved) - from 0 - 100%?
 fy20<-peds_psnu %>% filter(fiscal_year=="2020",countryname=="Zambia",indicator=="TX_CURR", standardizeddisaggregate=="Age/Sex/HIVStatus") %>%
   filter(!trendsfine %in% c("15-19","20-24","25-29","30-34","35-39","40-49","50+")) %>%
@@ -129,14 +142,23 @@ map2_geo<-st_as_sf(gis_vc_sfc$VcPepfarPolygons.shp) %>%
 #I need to see if I should add two different dataframes into one map or if
 #I should have joined the two of them earlier on
 
-map1<-terrain_map(countries = "Zambia", terr_path = si_path(type = "path_raster"), mask = TRUE) +
-  geom_sf(data = peds_geo %>% filter(!is.na(share)), aes(fill = share), lwd = .2, color = grey10k) +
-  geom_sf_text(data = peds_geo %>% filter(!is.na(share)), aes(label=percent(share, .1)), color=usaid_darkgrey, size = 2)+
+# BK Note: Get the basemap once
+basemap <- terrain_map(countries = "Zambia",
+                       terr_path = si_path(type = "path_raster"), mask = TRUE)
+
+# Reuse basemap
+map1 <- basemap +
+  geom_sf(data = peds_geo %>% filter(!is.na(share)),
+          aes(fill = share), lwd = .2, color = grey10k) +
+  geom_sf_text(data = peds_geo %>% filter(!is.na(share)),
+               aes(label=percent(share, .1)),
+               color=usaid_darkgrey, size = 2)+
   geom_sf(data = zam1, fill = NA, lwd = .2, color = grey30k) +
-  scale_fill_si(palette = "moody_blues", discrete=FALSE, alpha=0.9, reverse = TRUE,
+  scale_fill_si(palette = "moody_blues", discrete=FALSE,
+                alpha=0.9, reverse = TRUE,
                 breaks = c(0,0.25,0.5,0.75, 1.00),
                 limits = c(0, 1.00),
-                labels= percent)+
+                labels = percent) +
   si_style_map() +
   theme(
     legend.position =  "bottom",
@@ -144,7 +166,7 @@ map1<-terrain_map(countries = "Zambia", terr_path = si_path(type = "path_raster"
     legend.key.height = ggplot2::unit(.5, "cm"))+
   ggtitle("Zambia | % of the FY21 PEDS TX_CURR Targets by IP and SNU1")+
   # theme(plot.title = element_text(size = 9, family = "Source Sans Pro", face=1))+
-  facet_wrap(~mech_name, ncol = 3, labeller = label_wrap_gen(30))
+  facet_wrap(~mech_name, ncol = 3, labeller = label_wrap_gen(20))
 
 print(map1)
 
@@ -152,15 +174,80 @@ ggsave(here("Graphics", "Zambia_Map1_edit.png"),
        scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
 
 
+# BY Agency
 
-map2<-terrain_map(countries = "Zambia", terr_path = si_path(type = "path_raster"), mask = TRUE) +
-  geom_sf(data = map2_geo %>% filter(!is.na(APR), !is.infinite(APR)), aes(fill = APR), lwd = .2, color = grey10k) +
-  geom_sf_text(data = map2_geo %>% filter(!is.na(APR), !is.infinite(APR)), aes(label=percent(APR, .1)), color=usaid_red, size = 1)+
+# USAID
+map1a <- basemap +
+  geom_sf(data = peds_geo %>% filter(!is.na(share), fundingagency == "USAID"),
+          aes(fill = share), lwd = .2, color = grey10k) +
+  geom_sf_text(data = peds_geo %>% filter(!is.na(share), fundingagency == "USAID"),
+               aes(label=percent(share, .1)),
+               color=usaid_darkgrey, size = 2)+
   geom_sf(data = zam1, fill = NA, lwd = .2, color = grey30k) +
-  scale_fill_si(palette = "moody_blues", discrete=FALSE, alpha=0.9, reverse = TRUE,
-              breaks = c(0,0.25,0.5,0.75, 1.00,1.25,1.5, 1.75, 2.0),
-              limits = c(0, 2.00),
-              labels=percent)+
+  scale_fill_si(palette = "moody_blues", discrete=FALSE,
+                alpha=0.9, reverse = TRUE,
+                breaks = seq(0, .2, .1),
+                limits = c(0, .2),
+                labels = percent) +
+  si_style_map() +
+  theme(
+    legend.position =  "bottom",
+    legend.key.width = ggplot2::unit(1, "cm"),
+    legend.key.height = ggplot2::unit(.5, "cm"))+
+  #ggtitle("Zambia | % of the FY21 PEDS TX_CURR Targets by IP and SNU1")+
+  # theme(plot.title = element_text(size = 9, family = "Source Sans Pro", face=1))+
+  facet_wrap(~mech_name, ncol = 1, labeller = label_wrap_gen(20))
+
+print(map1a)
+
+# CDC
+map1b <- basemap +
+  geom_sf(data = peds_geo %>% filter(!is.na(share), fundingagency == "CDC"),
+          aes(fill = share), lwd = .2, color = grey10k) +
+  geom_sf_text(data = peds_geo %>% filter(!is.na(share), fundingagency == "CDC"),
+               aes(label=percent(share, .1)),
+               color=usaid_darkgrey, size = 2)+
+  geom_sf(data = zam1, fill = NA, lwd = .2, color = grey30k) +
+  scale_fill_si(palette = "genoas", discrete=FALSE,
+                alpha=0.9, reverse = TRUE,
+                breaks = seq(0, .3, .1),
+                limits = c(0, .3),
+                labels = percent) +
+  si_style_map() +
+  theme(
+    legend.position =  "bottom",
+    legend.key.width = ggplot2::unit(1, "cm"),
+    legend.key.height = ggplot2::unit(.5, "cm"))+
+  #ggtitle("Zambia | % of the FY21 PEDS TX_CURR Targets by IP and SNU1")+
+  # theme(plot.title = element_text(size = 9, family = "Source Sans Pro", face=1))+
+  facet_wrap(~mech_name, ncol = 2, labeller = label_wrap_gen(20))
+
+print(map1b)
+
+map1c <- (map1a + map1b) +
+  plot_layout(ncol = 2, widths = c(1, 2)) +
+  plot_annotation(
+    title = "Zambia | % of the FY21 PEDS TX_CURR Targets by IP and SNU1",
+    caption = paste0("OHA/SIEI - XYZ Sample caption, ", Sys.Date()),
+    theme = theme(plot.title = element_text(hjust = .5))
+  )
+
+
+print(map1c)
+
+#
+
+map2<-basemap +
+  geom_sf(data = map2_geo %>% filter(!is.na(APR), !is.infinite(APR)),
+          aes(fill = APR), lwd = .2, color = grey10k) +
+  geom_sf_text(data = map2_geo %>% filter(!is.na(APR), !is.infinite(APR)),
+               aes(label=percent(APR, .1)), color=usaid_red, size = 1)+
+  geom_sf(data = zam1, fill = NA, lwd = .2, color = grey30k) +
+  scale_fill_si(palette = "moody_blues", discrete=FALSE,
+                alpha = 0.9, reverse = TRUE,
+                breaks = c(0,0.25,0.5,0.75, 1.00,1.25,1.5, 1.75, 2.0),
+                limits = c(0, 2.00),
+                labels = percent) +
   si_style_map() +
   theme(
     legend.position =  "bottom",
@@ -168,7 +255,7 @@ map2<-terrain_map(countries = "Zambia", terr_path = si_path(type = "path_raster"
     legend.key.height = ggplot2::unit(.5, "cm"))+
   ggtitle("Zambia TX_CURR FY20 % Target Achievements")+
   # theme(plot.title = element_text(size = 9, family = "Source Sans Pro", face=1))+
-  facet_wrap(~mech_name, ncol = 4, labeller = label_wrap_gen(30))
+  facet_wrap(~mech_name, ncol = 3, labeller = label_wrap_gen(20))
 
 print(map2)
 
