@@ -31,7 +31,7 @@ build_spdf <-
       )
 
     cat("\nSpatial dataset: ",
-        Wavelength::paint_blue(file_shp),
+        crayon::blue(file_shp),
         "\n")
 
     # Make sure file exists
