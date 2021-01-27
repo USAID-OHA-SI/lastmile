@@ -1,10 +1,10 @@
 #Mamedina
 #01122021 - DRAFT PEDs Maps
 
-#MAp 1 a map showing IPs by SNU by country 
+#MAp 1 a map showing IPs by SNU by country
 #what % of the FY21 peds TX_CURR targets each IP has
 
-#Map 2: a map showing IPs by SNU by country what % of the peds TX_CURR APR20 results to targets 
+#Map 2: a map showing IPs by SNU by country what % of the peds TX_CURR APR20 results to targets
 #each IP achieved (ie what % of targets were achieved) - from 0 - 100%?
 
 
@@ -29,15 +29,23 @@ load_secrets()
 peds_psnu <- list.files(path = si_path(type="path_msd"),
                         pattern = "Structured_.*_PSNU_IM.*_20201218_v2_1.zip",
                         full.names = TRUE) %>%
+  sort() %>%
+  last() %>%
   read_msd()
 
 # GEO DATA ------------------------------------------------------------
 
-gis_vc_sfc <- list.files(si_path(type="path_vector"), #"/VcPepfarPolygons_2020.07.24"), 
-                         pattern = "Vc.*.shp$", 
+gis_vc_sfc <- list.files(si_path(type="path_vector"), #"/VcPepfarPolygons_2020.07.24"),
+                         pattern = "Vc.*.shp$",
                          recursive = T, full.names = T) %>%
+  sort() %>%
+  nth(3) %>%
   set_names(basename(.) %>% str_remove("_.*.shp$")) %>%
   map(read_sf)
+
+# cntry_adm1 <- get_adm_boundaries("ZMB", adm_level = 1, geo_path = si_path(type="path_vector")) %>%
+#   st_as_sf() %>%
+#   select(country = name_0, province = name_1)
 
 zam1 <- get_adm_boundaries("ZMB", adm_level = 1, geo_path = si_path(type="path_vector")) %>%
   st_as_sf() %>%
@@ -50,7 +58,93 @@ TX_disaggs<-peds_psnu %>%
   filter(indicator %in% c("TX_CURR")) %>%
   distinct(indicator,standardizeddisaggregate,otherdisaggregate, trendsfine)
 
-#CDC
+# Global dataset
+cntry_peds <- peds_psnu %>% filter(fiscal_year == "2021",
+                              indicator == "TX_CURR",
+                              standardizeddisaggregate == "Age/Sex/HIVStatus") %>%
+  filter(!trendsfine %in% c("15-19","20-24","25-29","30-34","35-39","40-49","50+")) %>%
+  glamr::clean_agency() %>%
+  group_by(fiscal_year,operatingunit,snu1, mech_name, snu1uid, primepartner, fundingagency) %>%
+  summarise(across(starts_with("targ"), sum, na.rm = TRUE)) %>%
+  ungroup() %>%
+  reshape_msd(clean = TRUE) %>%
+  select(-period_type) %>%
+  group_by(operatingunit) %>%
+  mutate(country_val = sum(val, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(primepartner = paste0(primepartner, " (", fundingagency, ")"),
+         mech_name = paste0(mech_name, " (", fundingagency, ")")) %>%
+  group_by(operatingunit, snu1, snu1uid, mech_name, primepartner, fundingagency) %>%
+  summarise(val = sum(val, na.rm = TRUE),
+            #mech_val = first(mech_val),
+            share = val / first(country_val)) %>%
+  ungroup()
+
+cntry_peds %>% distinct(fundingagency)
+
+#map_apr <- function(ou) {}
+
+map_share <- function(ou){
+
+  print(ou)
+
+  df_cntry <- cntry_peds %>%
+    filter(operatingunit == ou,
+           fundingagency %in% c("USAID", "CDC"))
+
+  peds_geo <- st_as_sf(gis_vc_sfc$VcPepfarPolygons.shp) %>%
+    left_join(df_cntry, by = c("uid" = "snu1uid"))
+
+  basemap <- terrain_map(countries = ou,
+                         terr_path = si_path(type = "path_raster"),
+                         mask = TRUE)
+
+  ou2 <- ifelse(ou == "Cote d'Ivoire", "Ivory Coast", ou)
+
+  cntry_adm1 <- gisr::get_admin1(ou2)
+
+  map1 <- basemap +
+    geom_sf(data = peds_geo %>% filter(!is.na(share)),
+            aes(fill = share), lwd = .2, color = grey10k) +
+    geom_sf_text(data = peds_geo %>% filter(!is.na(share)),
+                 aes(label=percent(share, .1)), color=usaid_darkgrey, size = 2) +
+    geom_sf(data = cntry_adm1, fill = NA, lwd = .2, color = grey30k) +
+    scale_fill_si(palette = "moody_blues", discrete=FALSE,
+                  alpha=0.9, reverse = TRUE,
+                  breaks = c(0,0.25,0.5,0.75, 1.00),
+                  limits = c(0, 1.00),
+                  labels = percent) +
+    si_style_map() +
+    theme(
+      legend.position =  "bottom",
+      legend.key.width = ggplot2::unit(1, "cm"),
+      legend.key.height = ggplot2::unit(.5, "cm"))+
+    ggtitle(paste0(ou, " | % of the FY21 PEDS TX_CURR Targets by IP and SNU1")) +
+    # theme(plot.title = element_text(size = 9, family = "Source Sans Pro", face=1))+
+    facet_wrap(~mech_name, ncol = 3, labeller = label_wrap_gen(20))
+
+
+  print(map1)
+
+  return(map1)
+
+
+}
+
+min(cntry_peds$share)
+max(cntry_peds$share)
+
+cntry_peds %>%
+  filter(!str_detect(operatingunit, " Region$"),
+         !is.na(share)) %>%
+  distinct(operatingunit) %>%
+  pull() %>%
+  nth(24) %>%
+  map2(.x, .f = ~map_share(ou = .x))
+
+
+
+
 zam_cdc<-peds_psnu %>% filter(fiscal_year=="2021",countryname=="Zambia",
                               indicator=="TX_CURR", standardizeddisaggregate=="Age/Sex/HIVStatus") %>%
   filter(!trendsfine %in% c("15-19","20-24","25-29","30-34","35-39","40-49","50+")) %>%
@@ -102,7 +196,7 @@ zam_USAID<-peds_psnu %>% filter(fiscal_year=="2021",countryname=="Zambia",
 zam_ped<-rbind(zam_cdc, zam_USAID)
 
 
- # a map showing IPs by SNU by country what % of the peds TX_CURR APR20 
+ # a map showing IPs by SNU by country what % of the peds TX_CURR APR20
  #results to targets each IP achieved (ie what % of targets were achieved) - from 0 - 100%?
 fy20<-peds_psnu %>% filter(fiscal_year=="2020",countryname=="Zambia",indicator=="TX_CURR", standardizeddisaggregate=="Age/Sex/HIVStatus") %>%
   mutate(
@@ -143,13 +237,13 @@ basemap <- terrain_map(countries = "Zambia",
                        terr_path = si_path(type = "path_raster"), mask = TRUE)
 
 #then reuse basemap
-map1<- basemap + 
-  geom_sf(data = peds_geo %>% filter(!is.na(share)), 
+map1<- basemap +
+  geom_sf(data = peds_geo %>% filter(!is.na(share)),
               aes(fill = share), lwd = .2, color = grey10k) +
-  geom_sf_text(data = peds_geo %>% filter(!is.na(share)), 
+  geom_sf_text(data = peds_geo %>% filter(!is.na(share)),
                aes(label=percent(share, .1)), color=usaid_darkgrey, size = 2) +
   geom_sf(data = zam1, fill = NA, lwd = .2, color = grey30k) +
-  scale_fill_si(palette = "moody_blues", discrete=FALSE, 
+  scale_fill_si(palette = "moody_blues", discrete=FALSE,
                 alpha=0.9, reverse = TRUE,
                 breaks = c(0,0.25,0.5,0.75, 1.00),
                 limits = c(0, 1.00),
@@ -237,12 +331,12 @@ ggsave(here("Graphics", "MAP1_ZAMBIA_PEDS_TX_CURR Targets FY21.png"),
 
 
 map2<-basemap +
-  geom_sf(data = map2_geo %>% filter(!is.na(APR), !is.infinite(APR)), 
+  geom_sf(data = map2_geo %>% filter(!is.na(APR), !is.infinite(APR)),
           aes(fill = APR), lwd = .2, color = grey10k) +
-  geom_sf_text(data = map2_geo %>% filter(!is.na(APR), !is.infinite(APR)), 
+  geom_sf_text(data = map2_geo %>% filter(!is.na(APR), !is.infinite(APR)),
           aes(label=percent(APR, .1)), color=usaid_lightgrey, size = 1) +
   geom_sf(data = zam1, fill = NA, lwd = .2, color = grey30k) +
-  scale_fill_si(palette = "moody_blues", discrete=FALSE, 
+  scale_fill_si(palette = "moody_blues", discrete=FALSE,
                 alpha=0.9, reverse = TRUE,
                 breaks = c(0,0.25,0.5,0.75, 1.00,1.25,1.5, 1.75, 2.0),
                 limits = c(0, 2.00),
@@ -252,7 +346,7 @@ map2<-basemap +
     legend.position =  "bottom",
     legend.key.width = ggplot2::unit(2, "cm"),
     legend.key.height = ggplot2::unit(.5, "cm"))+
-  ggtitle("ZAMBIA | % of TX_CURR FY20 Target Achievements by IP and SNU1", 
+  ggtitle("ZAMBIA | % of TX_CURR FY20 Target Achievements by IP and SNU1",
           subtitle ="SIEI/OHA - MSD FY20") +
   facet_wrap(~mech_name, ncol = 4, labeller = label_wrap_gen(20))
 
