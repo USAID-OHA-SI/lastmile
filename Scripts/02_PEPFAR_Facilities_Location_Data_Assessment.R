@@ -21,9 +21,6 @@ library(glamr)
 
 # GLOBALS --------------------------------------------------------------------------------
 
-    ## Datim Account details
-    user <- ""
-    key <- ""
 
     # Data & Output folders
     dir_terr <- "../../GEODATA/RASTER"
@@ -69,15 +66,15 @@ library(glamr)
 
     ## Export facilities location data
     export_facilities <- function(cntry, user, pass, dir_mersites, out_folder = "./Dataout") {
+
         sites <- extract_locations(country = {{cntry}},
                           username = {{user}},
                           password = {{pass}}) %>%
             extract_facilities(mer_sites = get_mersites({{dir_mersites}}, {{cntry}})) %>%
             select(operatingunit:id, longitude:latitude)
 
-        sites %>% glimpse()
-
-        readr::write_csv(sites, path = paste0({{out_folder}}, "/", {{cntry}}, " - Facilities_locations_", Sys.Date(), ".csv"), na = "")
+        readr::write_csv(x = sites,
+                         file = paste0({{out_folder}}, "/", {{cntry}}, " - Facilities_locations_", Sys.Date(), ".csv"), na = "")
     }
 
     ## generate facilities report 2
@@ -105,7 +102,7 @@ library(glamr)
         # Export viz as png file
         if ( !is.null({{output_folder}}) ) {
             ggplot2::ggsave(
-                filename = paste0({{output_folder}}, "/", {{cntry}}, " - Sites location data availability.png"),
+                filename = paste0({{output_folder}}, "/", {{cntry}}, " - SSSites location data availability.png"),
                 plot = last_plot(), scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
         }
 
@@ -115,42 +112,58 @@ library(glamr)
 # DATA --------------------------------------------------------------------------
 
     ## Get list of PEPFAR OUs
-    ous <- Wavelength::identify_ouuids(username = user, password = glamr::mypwd(key))
+    ous <- Wavelength::identify_ouuids(username = datim_user(),
+                                       password = datim_pwd())
 
     ## Remove out regional OUs
     countries <- ous %>%
         filter(is.na(regional), !str_detect(displayName, "Region")) %>%
         pull(displayName)
 
+    ## Combine map + assessment graph - Nigeria
+    countries[16] %>%
+        map(.x, .f = ~generate_facilities_report(cntry = .x,
+                                                 mer_sites = get_mersites(dir_merdata, .x),
+                                                 user = datim_user(),
+                                                 pass = datim_pwd(),
+                                                 terr_path = dir_terr,
+                                                 output_folder = dir_graphs))
+
 
     ## Combine map + assessment graph
     countries[1:18, 20:25] %>%
         map(.x, .f = ~generate_facilities_report(cntry = .x,
                                                  mer_sites = get_mersites(dir_merdata, .x),
-                                                 user = user,
-                                                 pass = glamr::mypwd(key),
+                                                 user = datim_user(),
+                                                 pass = datim_pwd(),
                                                  terr_path = dir_terr,
                                                  output_folder = dir_graphs))
     ## SS has mis-matching scales
     countries[19] %>%
         map(.x, .f = ~generate_facilities_report(cntry = .x,
                                              mer_sites = get_mersites(dir_merdata, .x),
-                                             user = user,
-                                             pass = glamr::mypwd(key)
+                                             user = datim_user(),
+                                             pass = datim_pwd(),
                                              output_folder = dir_graphs))
 
     ## Export Facilities location data by OU
-    countries %>%
-        map(export_facilities, user, glamr::mypwd(key), dir_merdata, dir_sites)
+    countries[16] %>%
+        map(export_facilities,
+            datim_user(),
+            datim_pwd(),
+            dir_merdata,
+            dir_sites)
 
 
     ## Batch generate Maps
     list.files(
-        path = dir_sites,
-        pattern = ".csv$",
-        full.names = TRUE
-    ) %>%
-        first() %>%
+            path = dir_sites,
+            pattern = "^Nigeria.*.csv$",
+            full.names = TRUE
+        ) %>%
+        sort() %>%
+        last() %>%
         vroom() %>%
-        generate_facilities_report2(cntry = "Angola")
+        generate_facilities_report2(cntry = "Nigeria",
+                                    output_folder = dir_graphs)
 
