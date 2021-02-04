@@ -96,7 +96,7 @@ map_share <- function(ou){
     left_join(df_cntry, by = c("uid" = "snu1uid"))
 
   basemap <- terrain_map(countries = ou,
-                         terr_path = si_path(type = "path_raster"),
+                         terr = si_path(type = "path_raster"),
                          mask = TRUE)
 
   ou2 <- ifelse(ou == "Cote d'Ivoire", "Ivory Coast", ou)
@@ -140,12 +140,13 @@ cntry_peds %>%
   distinct(operatingunit) %>%
   pull() %>%
   nth(24) %>%
-  map2(.x, .f = ~map_share(ou = .x))
+  #map2(.x, .f = ~map_share(ou = .x))
+  map(.x, .f = ~map_share(ou = .x))
 
 
 
 
-zam_cdc<-peds_psnu %>% filter(fiscal_year=="2021",countryname=="Zambia",
+zam_cdc <- peds_psnu %>% filter(fiscal_year=="2021",countryname=="Zambia",
                               indicator=="TX_CURR", standardizeddisaggregate=="Age/Sex/HIVStatus") %>%
   filter(!trendsfine %in% c("15-19","20-24","25-29","30-34","35-39","40-49","50+")) %>%
   mutate(
@@ -198,14 +199,19 @@ zam_ped<-rbind(zam_cdc, zam_USAID)
 
  # a map showing IPs by SNU by country what % of the peds TX_CURR APR20
  #results to targets each IP achieved (ie what % of targets were achieved) - from 0 - 100%?
-fy20<-peds_psnu %>% filter(fiscal_year=="2020",countryname=="Zambia",indicator=="TX_CURR", standardizeddisaggregate=="Age/Sex/HIVStatus") %>%
+fy20 <- peds_psnu %>%
+  filter(fiscal_year == "2020",
+         countryname == "Zambia",
+         indicator == "TX_CURR",
+         standardizeddisaggregate == "Age/Sex/HIVStatus") %>%
   mutate(
     fundingagency = case_when(
       fundingagency == "HHS/CDC" ~ "CDC",
       TRUE ~ fundingagency
     )) %>%
   filter(!trendsfine %in% c("15-19","20-24","25-29","30-34","35-39","40-49","50+")) %>%
-  group_by(fiscal_year,operatingunit,snu1, mech_name, snu1uid, primepartner, fundingagency) %>%
+  group_by(fiscal_year, operatingunit,snu1, mech_name,
+           snu1uid, primepartner, fundingagency) %>%
   summarise_at(vars(targets:cumulative),sum,na.rm=TRUE) %>%
   ungroup() %>%
   select(-c(qtr1:qtr4)) %>%
@@ -213,17 +219,18 @@ fy20<-peds_psnu %>% filter(fiscal_year=="2020",countryname=="Zambia",indicator==
   #select(-period_type)
   mutate(primepartner = paste0(primepartner, " (", fundingagency, ")"),
          mech_name = paste0(mech_name, " (", fundingagency, ")")) %>%
-  group_by(fiscal_year,operatingunit,snu1, mech_name, snu1uid,fundingagency, primepartner) %>%
-  mutate(APR=(cumulative/targets))%>%
+  group_by(fiscal_year,operatingunit,snu1, mech_name,
+           snu1uid,fundingagency, primepartner) %>%
+  mutate(APR = (cumulative/targets)) %>%
   ungroup()
   #reshape_msd(clean = TRUE) %>%
   #select(-period_type,val)
 
 # GEO Data Joins
-peds_geo<-st_as_sf(gis_vc_sfc$VcPepfarPolygons.shp) %>%
+peds_geo <- st_as_sf(gis_vc_sfc$VcPepfarPolygons.shp) %>%
   left_join(zam_ped, by = c("uid" = "snu1uid"))
 
-map2_geo<-st_as_sf(gis_vc_sfc$VcPepfarPolygons.shp) %>%
+map2_geo <- st_as_sf(gis_vc_sfc$VcPepfarPolygons.shp) %>%
   left_join(fy20, by = c("uid" = "snu1uid"))
 
 
@@ -234,10 +241,11 @@ map2_geo<-st_as_sf(gis_vc_sfc$VcPepfarPolygons.shp) %>%
 
 #BK: create basemap once
 basemap <- terrain_map(countries = "Zambia",
-                       terr_path = si_path(type = "path_raster"), mask = TRUE)
+                       terr = si_path(type = "path_raster"),
+                       mask = TRUE)
 
 #then reuse basemap
-map1<- basemap +
+map1 <- basemap +
   geom_sf(data = peds_geo %>% filter(!is.na(share)),
               aes(fill = share), lwd = .2, color = grey10k) +
   geom_sf_text(data = peds_geo %>% filter(!is.na(share)),
