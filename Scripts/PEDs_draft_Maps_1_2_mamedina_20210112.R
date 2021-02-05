@@ -101,7 +101,7 @@ map_share <- function(df_peds, ou,
     distinct(mech_name) %>%
     nrow()
 
-  ncols <- ifelse(nmechs <= 3, 1, ifelse(nmechs < 9, 2, 3))
+  ncols <- round(nmechs / 3)
 
   peds_geo <- st_as_sf(gis_vc_sfc$VcPepfarPolygons) %>%
     left_join(df_cntry, by = c("uid" = "snu1uid")) %>%
