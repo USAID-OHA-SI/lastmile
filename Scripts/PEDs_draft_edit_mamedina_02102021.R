@@ -82,24 +82,25 @@ cntry_peds <- peds_psnu %>%
   group_by(operatingunit) %>%
   mutate(country_val = sum(val, na.rm = TRUE)) %>%
   ungroup() %>%
+  group_by(operatingunit, primepartner) %>%
+  mutate(primepartner_val = sum(val, na.rm = TRUE)) %>%
+  ungroup() %>%
   #mutate(primepartner = paste0(primepartner, " (", fundingagency, ")")) %>%
          #mech_name = paste0(mech_name, " (", fundingagency, ")"),
          #mech_code = paste0(mech_code, " (", fundingagency, ")")) %>%
   group_by(operatingunit, snu1, snu1uid, #mech_name, mech_code,
            primepartner, fundingagency) %>%
   summarise(val = sum(val, na.rm = TRUE),
-            share = val / first(country_val)) %>%
+            share = val / first(country_val),
+            primeshare = primepartner_val / first(country_val)) %>%
   ungroup() %>%
-  group_by(operatingunit,
-           primepartner, fundingagency) %>%
-  summarise(primeshare = sum(share, na.rm = TRUE)) %>%
-            #primeshare = val / first(country_val)) %>%
-  ungroup() %>%
- mutate(primepartner = paste0(primepartner, " (", fundingagency, "(", primeshare*100, "%","))"))
+  mutate(primepartner = paste0(primepartner, " (", round(primeshare*100, 2), "%",")"))
 
 #how do I stop it from writing over share, and country_val??
 
 cntry_peds %>% distinct(fundingagency)
+
+cntry_peds %>% View()
 
 #counting mechs
 cntry_peds %>% filter(operatingunit == "Kenya", fundingagency == "CDC") %>% count(primepartner, mech_code, mech_name) %>% arrange(primepartner) %>% prinf()
@@ -133,10 +134,23 @@ map_share <- function(df_peds, ou,
 
  # ou2 <- ifelse(ou == "Cote d'Ivoire", "Ivory Coast", ou)
 
-  ou2 <- if (ou=="Cote d'Ivoire", "Ivory Coast"),
-          else if (ou=="Eswatini", "Swaziland"),
-          else if (ou== "Democratic Republic of Congo", )
-          else if (ou== "South Sudan", )
+  ou2 <- case_when(
+    ou == "Cote d'Ivoire" ~ "Ivory Coast",
+    ou == "Eswatini" ~ "Swaziland",
+    ou == "Democratic Republic of Congo" ~ "<...>",
+    ou == "South Sudan" ~ "<...>",
+    TRUE ~ ou
+  )
+
+  ou2 <- ifelse(ou == "Cote d'Ivoire", "Ivory Coast",
+         ifelse(ou == "Eswatini", "Swaziland",
+                ifelse(ou == "Democratic Republic of Congo", "<...>",
+                       ifelse(ou == "South Sudan", "<...>", ou))))
+
+  # ou2 <- if (ou == "Cote d'Ivoire", "Ivory Coast"),
+  #         else if (ou=="Eswatini", "Swaziland"),
+  #         else if (ou== "Democratic Republic of Congo", )
+  #         else if (ou== "South Sudan", )
 
   cntry_adm1 <- gisr::get_admin1(ou2)
 
