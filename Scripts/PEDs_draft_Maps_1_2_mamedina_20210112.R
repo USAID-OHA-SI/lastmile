@@ -22,7 +22,7 @@ library(janitor)
 
 # MER Data
 
-#load_secrets()
+load_secrets()
 
 # MER Site level import --------------------------------------------------------------------
 
@@ -38,9 +38,17 @@ peds_psnu <- list.files(path = si_path(type="path_msd"),
 gis_vc_sfc <- return_latest(
     si_path(type="path_vector"),
     pattern = "Vc.*.shp$",
-    recursive = T) %>%
+    recursive = T, full.names = T) %>%
   set_names(basename(.) %>% str_remove(".shp")) %>%
   map(read_sf)
+
+gis_vc_sfc <- list.files(
+  si_path(type="path_vector"),
+  pattern = "Vc.*.shp$",
+  recursive = T, full.names = T) %>%
+  set_names(basename(.) %>% str_remove(".shp")) %>%
+  map(read_sf)
+
 
 # cntry_adm1 <- get_adm_boundaries("ZMB", adm_level = 1, geo_path = si_path(type="path_vector")) %>%
 #   st_as_sf() %>%
@@ -65,7 +73,7 @@ cntry_peds <- peds_psnu %>%
   filter(!trendsfine %in% c("15-19","20-24","25-29",
                             "30-34","35-39","40-49","50+")) %>%
   glamr::clean_agency() %>%
-  group_by(fiscal_year, operatingunit, snu1, mech_name, mech_code,
+  group_by(fiscal_year, operatingunit, snu1, #mech_name, mech_code,
            snu1uid, primepartner, fundingagency) %>%
   summarise(across(starts_with("targ"), sum, na.rm = TRUE)) %>%
   ungroup() %>%
@@ -74,18 +82,22 @@ cntry_peds <- peds_psnu %>%
   group_by(operatingunit) %>%
   mutate(country_val = sum(val, na.rm = TRUE)) %>%
   ungroup() %>%
-  mutate(primepartner = paste0(primepartner, " (", fundingagency, ")"),
-         mech_name = paste0(mech_name, " (", fundingagency, ")"),
-         mech_code = paste0(mech_code, " (", fundingagency, ")")) %>%
-  group_by(operatingunit, snu1, snu1uid, mech_name, mech_code,
+  mutate(primepartner = paste0(primepartner, " (", fundingagency, ")")) %>%
+         #mech_name = paste0(mech_name, " (", fundingagency, ")"),
+         #mech_code = paste0(mech_code, " (", fundingagency, ")")) %>%
+  group_by(operatingunit, snu1, snu1uid, #mech_name, mech_code,
            primepartner, fundingagency) %>%
   summarise(val = sum(val, na.rm = TRUE),
             share = val / first(country_val)) %>%
-  ungroup()
+  ungroup()# %>%
+  #mutate(primepartner = paste0(primepartner, " (", fundingagency, "(", share*100, "))"))
 
 cntry_peds %>% distinct(fundingagency)
 
-#map_apr <- function(ou) {}
+#counting mechs
+cntry_peds %>% filter(operatingunit == "Kenya", fundingagency == "CDC") %>% count(primepartner, mech_code, mech_name) %>% arrange(primepartner) %>% prinf()
+
+
 
 map_share <- function(df_peds, ou,
                       agencies = "USAID") {
@@ -98,7 +110,8 @@ map_share <- function(df_peds, ou,
            fundingagency %in% agencies)
 
   nmechs <- df_cntry %>%
-    distinct(mech_name) %>%
+   # distinct(mech_name) %>%
+    distinct(primepartner) %>%
     nrow()
 
   ncols <- round(nmechs / 3)
@@ -120,7 +133,7 @@ map_share <- function(df_peds, ou,
             aes(fill = share), lwd = .2, color = grey10k) +
     geom_sf_text(data = peds_geo,
                  aes(label = percent(share, .1)),
-                 color = usaid_darkgrey, size = 2) +
+                 color = usaid_darkgrey, size = 1) +
     geom_sf(data = cntry_adm1, fill = NA, lwd = .2, color = grey30k) +
     scale_fill_si(palette = "moody_blues", discrete = FALSE,
                   alpha = 0.9, reverse = TRUE,
@@ -134,7 +147,8 @@ map_share <- function(df_peds, ou,
       legend.key.height = ggplot2::unit(.5, "cm")) +
     ggtitle(paste0(ou, " | % of the FY21 PEDS TX_CURR Targets by IP and SNU1")) +
     # theme(plot.title = element_text(size = 9, family = "Source Sans Pro", face=1))+
-    facet_wrap(~mech_code, ncol = ncols, labeller = label_wrap_gen(20))
+    #facet_wrap(~mech_code, ncol = ncols, labeller = label_wrap_gen(20))
+    facet_wrap(~primepartner, ncol = ncols, labeller = label_wrap_gen(20))
 
 
   print(map1)
@@ -164,6 +178,139 @@ cntry_peds %>%
   map(.x, .f = ~map_share(df_peds = cntry_peds,
                           ou = .x,
                           agencies = "CDC"))
+
+
+ggsave(here("~/Github/training/Graphics", "MAP1_edit_kenya TX_CURR by IP.png"),
+       scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
+
+
+
+# ---------------- MAP 2 -----------------------------------
+
+#Global Dataset for Map 2
+
+cntry_2_peds <- peds_psnu %>%
+  filter(fiscal_year == "2020",
+         indicator == "TX_CURR",
+         standardizeddisaggregate == "Age/Sex/HIVStatus") %>%
+  filter(!trendsfine %in% c("15-19","20-24","25-29",
+                            "30-34","35-39","40-49","50+")) %>%
+  glamr::clean_agency() %>%
+  group_by(fiscal_year, operatingunit, snu1, #mech_name, mech_code,
+           snu1uid, primepartner, fundingagency) %>%
+  summarise_at(vars(targets:cumulative),sum,na.rm=TRUE) %>%
+  ungroup() %>%
+  select(-c(qtr1:qtr4)) %>%
+  #reshape_msd(clean = TRUE) %>%
+  group_by(operatingunit) %>%
+  mutate(country_targ = sum(targ, na.rm = TRUE)) %>%
+  ungroup() %>%
+  mutate(primepartner = paste0(primepartner, " (", fundingagency, ")")) %>%
+  #mech_name = paste0(mech_name, " (", fundingagency, ")"),
+  #mech_code = paste0(mech_code, " (", fundingagency, ")")) %>%
+  group_by(operatingunit, snu1, snu1uid, #mech_name, mech_code,
+           primepartner, fundingagency) %>%
+  #I dont know if I understand what first() does
+  summarise(cumulative = sum(cumulative, na.rm = TRUE),
+            APR = cumulative / first(country_targ)) %>%
+  ungroup()
+
+#mutate(APR = (cumulative/targets)) %>%
+#  ungroup()
+
+
+
+
+map_apr <- function(df_apr, ou, agencies = "USAID") {
+
+  print(ou)
+
+  df_cntry_2 <- df_apr %>%
+    filter(operatingunit == ou,
+           #fundingagency %in% c("USAID", "CDC"),
+           fundingagency %in% agencies)
+
+  nmechs <- df_cntry_2 %>%
+    # distinct(mech_name) %>%
+    distinct(primepartner) %>%
+    nrow()
+
+  ncols <- round(nmechs / 3)
+
+  map2_geo <- st_as_sf(gis_vc_sfc$VcPepfarPolygons) %>%
+    left_join(df_cntry_2, by = c("uid" = "snu1uid")) %>%
+    dplyr::filter(!is.na(share)) # BK => This will remove rows with no mer data
+
+  basemap <- terrain_map(countries = ou,
+                         terr = si_path(type = "path_raster"),
+                         mask = TRUE)
+
+  ou2 <- ifelse(ou == "Cote d'Ivoire", "Ivory Coast", ou)
+
+  cntry_adm1 <- gisr::get_admin1(ou2)
+
+  map1 <- basemap +
+    geom_sf(data = map2_geo,
+            aes(fill = APR), lwd = .2, color = grey10k) +
+    geom_sf_text(data = map2_geo,
+                 aes(label = percent(share, .1)),
+                 color = usaid_darkgrey, size = 1) +
+    geom_sf(data = cntry_adm1, fill = NA, lwd = .2, color = grey30k) +
+    scale_fill_si(palette = "moody_blues", discrete = FALSE,
+                  alpha = 0.9, reverse = TRUE,
+                  breaks = c(0,0.25,0.5,0.75, 1.00),
+                  limits = c(0, 1.00),
+                  labels = percent) +
+    si_style_map() +
+    theme(
+      legend.position =  "bottom",
+      legend.key.width = ggplot2::unit(1, "cm"),
+      legend.key.height = ggplot2::unit(.5, "cm")) +
+    ggtitle(paste0(ou, " | % of the FY21 PEDS TX_CURR Targets by IP and SNU1")) +
+    # theme(plot.title = element_text(size = 9, family = "Source Sans Pro", face=1))+
+    #facet_wrap(~mech_code, ncol = ncols, labeller = label_wrap_gen(20))
+    facet_wrap(~primepartner, ncol = ncols, labeller = label_wrap_gen(20))
+
+
+  print(map1)
+
+  return(map1)
+}
+
+min(cntry_peds$share)
+max(cntry_peds$share)
+
+cntry_peds %>%
+  filter(!str_detect(operatingunit, " Region$"),
+         !is.na(share)) %>%
+  distinct(operatingunit) %>%
+  pull() %>%
+  nth(11) %>%
+  map(.x, .f = ~map_share(df_peds = cntry_peds,
+                          ou = .x,
+                          agencies = "USAID"))
+
+cntry_peds %>%
+  filter(!str_detect(operatingunit, " Region$"),
+         !is.na(share)) %>%
+  distinct(operatingunit) %>%
+  pull() %>%
+  nth(11) %>%
+  map(.x, .f = ~map_share(df_peds = cntry_peds,
+                          ou = .x,
+                          agencies = "CDC"))
+
+
+ggsave(here("~/Github/training/Graphics", "MAP1_edit_kenya TX_CURR by IP.png"),
+       scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
+
+
+
+
+
+
+
+
 
 
 
