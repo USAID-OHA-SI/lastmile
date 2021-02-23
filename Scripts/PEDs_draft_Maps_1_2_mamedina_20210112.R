@@ -25,20 +25,22 @@ library(janitor)
 #load_secrets()
 
 # MER Site level import --------------------------------------------------------------------
-
 peds_psnu <- list.files(path = si_path(type="path_msd"),
-                        pattern = "Structured_.*_PSNU_IM.*_20201218_v2_1.zip",
+                        pattern = "Structured_.*_PSNU_IM.*_20201218_v2_1.*.txt",
+                        recursive = TRUE,
                         full.names = TRUE) %>%
   sort() %>%
   last() %>%
   read_msd()
 
 # GEO DATA ------------------------------------------------------------
-
-gis_vc_sfc <- return_latest(
-    si_path(type="path_vector"),
-    pattern = "Vc.*.shp$",
-    recursive = T) %>%
+gis_vc_poly <- list.files(si_path(type="path_vector"),
+                          pattern = "VcPepfar.*.shp$",
+                          recursive = T,
+                          full.names = T)
+gis_vc_sfc <- return_latest(si_path(type="path_vector"),
+                            pattern = "VcPepfar.*.shp$",
+                            recursive = T) %>%
   set_names(basename(.) %>% str_remove(".shp")) %>%
   map(read_sf)
 
