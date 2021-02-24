@@ -134,7 +134,7 @@ map_share <- function(df_peds, ou,
 
  # ou2 <- ifelse(ou == "Cote d'Ivoire", "Ivory Coast", ou)
 
-  ou2 <- case_when(
+  ou <- case_when(
     ou == "Cote d'Ivoire" ~ "Ivory Coast",
     ou == "Eswatini" ~ "Swaziland",
     ou == "Democratic Republic of Congo" ~ "<...>",
@@ -142,17 +142,13 @@ map_share <- function(df_peds, ou,
     TRUE ~ ou
   )
 
-  ou2 <- ifelse(ou == "Cote d'Ivoire", "Ivory Coast",
-         ifelse(ou == "Eswatini", "Swaziland",
-                ifelse(ou == "Democratic Republic of Congo", "<...>",
-                       ifelse(ou == "South Sudan", "<...>", ou))))
+  # ou <- ifelse(ou == "Cote d'Ivoire", "Ivory Coast",
+  #        ifelse(ou == "Eswatini", "Swaziland",
+  #               ifelse(ou == "Democratic Republic of Congo", "<...>",
+  #                      ifelse(ou == "South Sudan", "<...>", ou))))
 
-  # ou2 <- if (ou == "Cote d'Ivoire", "Ivory Coast"),
-  #         else if (ou=="Eswatini", "Swaziland"),
-  #         else if (ou== "Democratic Republic of Congo", )
-  #         else if (ou== "South Sudan", )
 
-  cntry_adm1 <- gisr::get_admin1(ou2)
+  cntry_adm1 <- gisr::get_admin1(ou)
 
   map1 <- basemap +
     geom_sf(data = peds_geo,
