@@ -108,7 +108,7 @@ extract_tx_plp <-
     ous <- {{lst_ous}}
 
     if (pd == 1) {
-      cat(Wavelength::paint_red("This may not be appropriate for QTR1"))
+      cat(Wavelength::paint_red("\nThis may not be appropriate for QTR1\n"))
       stop("Error - Invalid Reporting Period")
     }
 

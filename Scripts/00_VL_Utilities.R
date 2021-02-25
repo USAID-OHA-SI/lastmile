@@ -468,7 +468,8 @@ map_viralload <-
 
       if (agency == TRUE) {
         theme_map <-
-          theme_map + facet_wrap( ~ fundingagency, nrow = facet_rows)
+          theme_map +
+          facet_wrap( ~ fundingagency, nrow = facet_rows)
       }
     }
 

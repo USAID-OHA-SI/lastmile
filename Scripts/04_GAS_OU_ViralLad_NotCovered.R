@@ -4,12 +4,11 @@
 ##  PURPOSE: Geo-depiction of VL - % not covered
 ##  LICENCE: MIT
 ##  DATE:    2020-09-04
-##  UPDATED: 2020-12-08
+##  UPDATED: 2021-02-25
 
 # Libraries
 library(tidyverse)
 library(vroom)
-library(sp)
 library(sf)
 library(raster)
 library(gisr)
@@ -39,27 +38,22 @@ dir_data <- "Data"
 dir_dataout <- "Dataout"
 dir_gis <- "GIS"
 dir_graphics <- "Graphics"
-dir_geodata <- "../../GEODATA/PEPFAR"
-dir_geo <- "../../GEODATA/PEPFAR"
-dir_terr <- "../../GEODATA/RASTER"
-dir_merdata <- "../../MERDATA"
+dir_geodata <- si_path("path_vector")
+dir_geo <- si_path("path_vector")
+dir_terr <- si_path("path_raster")
+dir_merdata <- si_path("path_msd")
 
-user <- NULL
-key <- NULL
 
-# Overrite obove with your own
-source("../_setup/00_Setup.R")
+## FY21 Q1 MER Data
 
-## Q3 MER Data
-
-psnu_im <- "^MER_.*_PSNU_IM_.*_20201113_v1_1.zip$"
+psnu_im <- "^MER_.*_PSNU_IM_.*_20210212_v1.1.zip$"
 
 ## Reporting Filters
 
 rep_agency = c("USAID", "HHS/CDC")
 
-rep_fy = 2020
-rep_qtr = 4
+rep_fy = 2021
+rep_qtr = 1
 
 rep_pd = rep_fy %>%
   as.character() %>%
@@ -189,13 +183,11 @@ get_output_name <-
 # DATA --------------------------------------------------------------
 
 ## File path + name
-file_psnu_im <- list.files(
-    path = dir_merdata,
+file_psnu_im <- return_latest(
+    folderpath = dir_merdata,
     pattern = psnu_im,
-    recursive = TRUE,
-    full.names = TRUE
-  ) %>%
-  last()
+    recursive = TRUE
+  )
 
 file_psnu_im
 
@@ -238,7 +230,7 @@ df_tx_ml <- extract_tx_ml(df_msd = df_psnu,
                           rep_pd = rep_qtr)
 
 
-# TX_PLP
+# TX_PLP => DO NOT RUN in Qtr1
 df_tx_bad <- extract_tx_plp(
   df_msd = df_psnu,
   rep_agency = c("USAID", "HHS/CDC"),
@@ -261,7 +253,7 @@ terr <- get_raster(terr_path = dir_terr)
 ## GEO - PEPFAR Orgs boundaries
 
 spdf_pepfar <- build_spdf(
-  dir_geo = paste0(dir_geodata, "/VcPepfarPolygons_2020.07.24"),
+  dir_geo = paste0(dir_geodata, "/VcPepfarPolygons_2021.01.19"),
   df_psnu = df_psnu
 )
 
@@ -280,7 +272,7 @@ map_viralload(
   cntry = cname,
   terr_raster = terr,
   agency = TRUE,
-  facet_rows = 2
+  facet_rows = 1
 )
 
 map_viralload(
