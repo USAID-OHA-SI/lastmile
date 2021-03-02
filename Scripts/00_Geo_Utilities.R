@@ -208,6 +208,39 @@ append_attributes <- function(spdf, df_ous, df_snus, df_psnus){
 }
 
 
+#' Get OrgUnit Attributes
+#'
+#' @param country ou/country
+#' @return df
+#'
+get_attributes <- function(country) {
+
+  print(country)
+
+  locs <- gisr::extract_locations(country = country, add_geom = FALSE)
+
+  labels <- locs %>%
+    distinct(label) %>%
+    pull()
+
+  # Use psnu as snu1
+  if (!"snu1" %in% labels) {
+    df_psnu <- locs %>%
+      dplyr::filter(label == "prioritization") %>%
+      dplyr::mutate(label = "snu1")
+
+    locs <- locs %>%
+      dplyr::bind_rows(df_psnu)
+  }
+
+  # Filter out facilities and communities
+  locs <- locs %>%
+    dplyr::select(-path) %>%
+    dplyr::filter(label != "facility")
+
+  return(locs)
+}
+
 #' @title Get Terrain Raster dataset
 #'
 #' @param terr_path path to terrain raster file

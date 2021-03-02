@@ -24,12 +24,6 @@ library(extrafont)
 library(viridis)
 library(tidytext)
 
-# REQUIRED -------------------------------------------------------------------------------
-
-## Get Credentials
-
-source("../../surprises/surprise.R")
-
 # GLOBALS -------------------------------------------------------------
 
 ## Data & Output folders
@@ -60,10 +54,28 @@ rep_pd = rep_fy %>%
   str_sub(3, 4) %>%
   paste0("FY", ., "Q", rep_qtr)
 
+## File path + name
+file_psnu_im <- return_latest(
+  folderpath = dir_merdata,
+  pattern = psnu_im,
+  recursive = TRUE
+)
+
+file_psnu_im
+
+## File path + name
+file_shp <- return_latest(
+  folderpath = dir_geodata,
+  pattern = "VcPepfarPolygons.*.shp",
+  recursive = TRUE
+)
+
+file_shp
 
 # FUNCTIONS ---------------------------------------------------------
 
 ## Utility functions
+source("./Scripts/00_Utilities.R")
 source("./Scripts/00_Geo_Utilities.R")
 source("./Scripts/00_VL_Utilities.R")
 source("./Scripts/00_ML_Utilities.R")
@@ -123,7 +135,7 @@ get_title <-
 #'
 get_caption <-
   function(country,
-           rep_pd = "FY20Q4i",
+           rep_pd = "FY21Q1i",
            var = NULL) {
 
   caption <- paste0("OHA/SIEI - Data Source: ",
@@ -159,10 +171,12 @@ get_caption <-
 #'
 get_output_name <-
   function(country,
+           rep_pd = "FY21Q1",
            var = "VLC",
            agency = TRUE) {
 
-  name <- paste0("FY20Q4_ViralLoad_",
+  name <- paste0(rep_pd,
+                 "_ViralLoad_",
                  toupper({{var}}),
                  "_")
 
@@ -181,15 +195,6 @@ get_output_name <-
 
 
 # DATA --------------------------------------------------------------
-
-## File path + name
-file_psnu_im <- return_latest(
-    folderpath = dir_merdata,
-    pattern = psnu_im,
-    recursive = TRUE
-  )
-
-file_psnu_im
 
 ## MER PSNU Data
 df_psnu <- read_msd(file_psnu_im)
@@ -245,18 +250,23 @@ df_tx_bad %>%
   summarise(sum = (TX_ML_PLP))
 
 
-## Geodata
+## Geodata ---
 
-## Terrain Raster
-terr <- get_raster(terr_path = dir_terr)
+  ## Terrain Raster
 
-## GEO - PEPFAR Orgs boundaries
+  terr <- get_raster(terr_path = dir_terr)
 
-spdf_pepfar <- build_spdf(
-  dir_geo = paste0(dir_geodata, "/VcPepfarPolygons_2021.01.19"),
-  df_psnu = df_psnu
-)
+  ## GEO - PEPFAR Orgs boundaries
 
+  spdf_pepfar <- file_shp %>% sf::read_sf()
+
+  df_attrs <- gisr::get_ouuids() %>%
+    filter(!str_detect(operatingunit, " Region$")) %>%
+    pull(operatingunit) %>%
+    map_dfr(.x, .f = ~get_attributes(country = .x))
+
+  spdf_pepfar <- spdf_pepfar %>%
+    left_join(df_attrs, by = c("uid" = "id"))
 
 # VIZ --------------------------------------
 
@@ -264,15 +274,14 @@ spdf_pepfar <- build_spdf(
 
 cname <- "Zambia"
 
-
 map_viralload(
   spdf = spdf_pepfar,
   df = df_vl,
   vl_variable = "VLS",
   cntry = cname,
   terr_raster = terr,
-  agency = TRUE,
-  facet_rows = 1
+  agency = T,
+  facet_rows = 2
 )
 
 map_viralload(
@@ -337,7 +346,7 @@ map_vlc_eid(
   terr_raster = terr,
   df2 = df_eid,
   mapvar = eid_cov_under2,
-  save_all = T
+  save_all = F
 )
 
 # Test TX_ML_PLP map
@@ -350,7 +359,7 @@ map_generic(
   terr_raster = terr,
   agency = T,
   facet_rows = 2,
-  save = TRUE,
+  save = F,
   four_parts = F
 )
 
@@ -361,14 +370,14 @@ map_generic(
 
 ## Batch VL mapping
 
+## Batch: ALL by Agency
+
 map_ous <- df_vl %>%
   filter(!str_detect(operatingunit, " Region$"),
-         !operatingunit %in% c("none")) %>%
+         !is.na(VLC)) %>%
   distinct(operatingunit) %>%
   pull()
 
-
-## Batch: ALL by Agency
 map_ous %>%
   map(.x, .f = ~ map_viralloads(
       spdf = spdf_pepfar,
@@ -382,6 +391,13 @@ map_ous %>%
   )
 
 ## Batch: ALL USAID Only
+map_ous <- df_vl %>%
+  filter(fundingagency == "USAID",
+         !str_detect(operatingunit, " Region$"),
+         !is.na(VLC)) %>%
+  distinct(operatingunit) %>%
+  pull()
+
 map_ous %>%
   map(.x, .f = ~ map_viralloads(
     spdf = spdf_pepfar,
@@ -392,24 +408,14 @@ map_ous %>%
     agency = FALSE
   ))
 
-
-## Batch: PEDS ALL
-map_ous %>%
-  #nth(24) %>%
-  map(.x, .f = ~ map_peds_viralloads(
-      spdf = spdf_pepfar,
-      df = df_vl_u15 %>% filter(fundingagency == "USAID"),
-      cntry = .x,
-      terr_raster = terr,
-      save = TRUE,
-      agency = FALSE
-    )
-  )
-
-
 ## Batch: PEDS by Agency
-map_ous %>%
-  #nth(24) %>%
+map_ous <- df_vl_u15 %>%
+  filter(!str_detect(operatingunit, " Region$"),
+         !is.na(VLC)) %>%
+  distinct(operatingunit) %>%
+  pull()
+
+map_ous[23:24] %>%
   map(.x, .f = ~ map_peds_viralloads(
       spdf = spdf_pepfar,
       df = df_vl_u15,
@@ -421,12 +427,39 @@ map_ous %>%
     )
   )
 
+## Batch: PEDS USAID
+map_ous <- df_vl_u15 %>%
+  filter(!str_detect(operatingunit, " Region$"),
+         fundingagency == "USAID",
+         !is.na(VLC)) %>%
+  distinct(operatingunit) %>%
+  pull()
+
+map_ous %>%
+  map(.x, .f = ~ map_peds_viralloads(
+      spdf = spdf_pepfar,
+      df = df_vl_u15 %>% filter(fundingagency == "USAID"),
+      cntry = .x,
+      terr_raster = terr,
+      save = TRUE,
+      agency = FALSE
+    )
+  )
+
+
+
+
 
 ## VL + EID Coverage
 map_ous <- df_eid %>%
   filter(!str_detect(operatingunit, " Region$"),
-         !operatingunit %in% c("none"),
          !is.na(eid_cov_under2)) %>%
+  distinct(operatingunit) %>%
+  pull()
+
+map_ous <- df_vl_u15 %>%
+  filter(!str_detect(operatingunit, " Region$"),
+         !is.na(VLC)) %>%
   distinct(operatingunit) %>%
   pull()
 

@@ -40,7 +40,7 @@ extract_viralload <-
     # Filter Indicators and
     df_vl <- df %>%
       filter(
-        fiscal_year == fy,
+        fiscal_year %in% c(fy - 1, fy), # Needed for Q1 vls
         fundingagency %in% agencies,
         indicator %in% c("TX_PVLS", "TX_CURR")
     )
@@ -89,7 +89,6 @@ extract_viralload <-
       dplyr::select(-period_type) %>%
       spread(indicator, val)
 
-
     # Calculate VL Stats
     df_vl <- df_vl %>%
       group_by(operatingunit, snu1, psnuuid, psnu, fundingagency) %>%
@@ -110,7 +109,8 @@ extract_viralload <-
           ")"
         ),
         psnu_short = psnu
-      )
+      ) %>%
+      filter(str_detect(period, paste0("^FY", str_sub(fy, 3, 4))))
 
     return(df_vl)
   }
@@ -384,46 +384,76 @@ map_viralload <-
     terr <- {{terr_raster}}
     peds_title <- {{peds}}
 
+    # if no data exit
+    if (nrow(df_vl) == 0) {
+      return(NULL)
+    }
+
+    # Si breaks and colors
+    breaks <- c(0, .8, .9, 1)
+    labels <- c("0 - 80%", "80 - 90%", "90 - 100%", "100%+")
+    colors <- c(old_rose_light, burnt_sienna_light, scooter, trolley_grey_light)
+
+    # Check the number of agencies
+    agencies <- df_vl %>%
+      distinct(fundingagency) %>%
+      pull() %>%
+      length()
+
     # Country boundaries
     df_geo0 <- df_geo %>%
-      filter(countryname == country, type == "OU")
+      filter(operatingunit == country, label == "country")
+
+    df_geo1 <- df_geo %>%
+      filter(operatingunit == country, label == "snu1")
 
     # PSNU Geo + VL data
     df_geo2 <- df_geo %>%
-      #filter(countryname == country, type == "PSNU") %>%
       filter(countryname == country) %>%
       left_join(df_vl, by = c("uid" = "psnuuid")) %>%
       dplyr::filter(!is.na(VLnC))
 
     # Basemap
-    base_map <- get_basemap(spdf = df_geo,
-                            cntry = country,
-                            terr_raster = terr)
+    base_map <- terrain_map(countries = lookup_country(cntry),
+                            adm0 = df_geo0,
+                            adm1 = df_geo1,
+                            mask = TRUE,
+                            terr = terr)
 
     # Map specific variable
     if (tolower(vl_var) == "vls") {
+
+      df_geo2 <- df_geo2 %>%
+        mutate(
+          VLS_color = case_when(
+            VLS <= 0.8 ~ old_rose_light,
+            VLS > 0.8 & VLS <= 0.9 ~ burnt_sienna_light,
+            VLS > 0.9 & VLS <= 1.0 ~ scooter,
+            VLS > 1 ~ trolley_grey_light),
+          VLS_color = factor(VLS_color, levels = colors)
+          )
+
+      # Map
       theme_map <- base_map +
         geom_sf(
           data = df_geo2,
-          aes(fill = VLS),
+          aes(fill = VLS_color),
           lwd = .2,
           color = grey10k,
           alpha = 0.8
         ) +
-        scale_fill_stepsn(
-          breaks = c(0, .8, .9, 1),
-          guide = guide_colorsteps(even.steps = FALSE),
-          na.value = grey40k,
-          limits = c(0, 1),
-          labels = percent,
-          colors = RColorBrewer::brewer.pal(n = 11, name = "RdYlGn")
+        scale_fill_identity(
+          labels = labels,
+          guide = guide_legend(label.position = "bottom")
         )
-
-      if (agency == TRUE) {
-        theme_map <-
-          theme_map + facet_wrap( ~ fundingagency, nrow = facet_rows)
-      }
-
+        # scale_fill_stepsn(
+        #   breaks = c(0, .8, .9, 1),
+        #   guide = guide_colorsteps(even.steps = FALSE),
+        #   na.value = grey40k,
+        #   limits = c(0, 1),
+        #   labels = percent,
+        #   #colors = RColorBrewer::brewer.pal(n = 11, name = "RdYlGn")
+        # )
     }
     else if (tolower(vl_var) == "vlc") {
       theme_map <- base_map +
@@ -433,20 +463,24 @@ map_viralload <-
           lwd = .2,
           color = grey10k
         ) +
-        scale_fill_viridis_c(
-          option = "magma",
+        scale_fill_si(
+          palette = "genoas",
+          discrete = FALSE,
           alpha = 0.9,
-          direction = -1,
           na.value = grey40k,
           breaks = c(0, .25, .50, .75, 1.00),
           limits = c(0, 1),
           labels = percent
         )
-
-      if (agency == TRUE) {
-        theme_map <-
-          theme_map + facet_wrap( ~ fundingagency, nrow = facet_rows)
-      }
+        # scale_fill_viridis_c(
+        #   option = "magma",
+        #   alpha = 0.9,
+        #   direction = -1,
+        #   na.value = grey40k,
+        #   breaks = c(0, .25, .50, .75, 1.00),
+        #   limits = c(0, 1),
+        #   labels = percent
+        # )
     }
     else {
       theme_map <- base_map +
@@ -456,21 +490,31 @@ map_viralload <-
           lwd = .2,
           color = grey10k
         ) +
-        scale_fill_viridis_c(
-          option = "viridis",
+        scale_fill_si(
+          palette = "burnt_siennas",
+          discrete = FALSE,
           alpha = 0.9,
-          direction = -1,
           na.value = grey40k,
           breaks = c(0, .25, .50, .75, 1.00),
           limits = c(0, 1),
           labels = percent
         )
+        # scale_fill_viridis_c(
+        #   option = "viridis",
+        #   alpha = 0.9,
+        #   direction = -1,
+        #   na.value = grey40k,
+        #   breaks = c(0, .25, .50, .75, 1.00),
+        #   limits = c(0, 1),
+        #   labels = percent
+        # )
+    }
 
-      if (agency == TRUE) {
-        theme_map <-
-          theme_map +
-          facet_wrap( ~ fundingagency, nrow = facet_rows)
-      }
+    # Check
+    if (agency == TRUE & agencies > 1) {
+      theme_map <-
+        theme_map +
+        facet_wrap( ~ fundingagency, nrow = facet_rows)
     }
 
     # Add country boundaries and apply map theme
@@ -500,25 +544,22 @@ map_viralload <-
     # Update legend size and position
     theme_map <- theme_map +
       theme(
+        plot.title = element_text(family = "Source Sans Pro", size = 14),
+        plot.subtitle = element_text(family = "Source Sans Pro", size = 12),
+        plot.caption = element_text(family = "Source Sans Pro", size = 8),
         legend.position =  "bottom",
         legend.direction = "horizontal",
         legend.key.width = ggplot2::unit(1.5, "cm"),
         legend.key.height = ggplot2::unit(.5, "cm")
       )
 
-
-    #print(theme_map)
-
-
+    # Save map
     if (save == TRUE) {
-      ggsave(
-        here::here("Graphics", get_output_name(country, var = vl_var)),
-        plot = last_plot(),
-        scale = 1.2,
-        dpi = 400,
-        width = 10,
-        height = 7,
-        units = "in"
+
+      print(theme_map)
+
+      si_save(
+        here::here("Graphics", get_output_name(country, var = vl_var))
       )
     }
 
@@ -561,6 +602,7 @@ map_viralloads <-
       nrow()
 
     if (n == 0) {
+      print("No data ...")
       return(NULL)
     }
 
@@ -609,17 +651,12 @@ map_viralloads <-
 
     # Save output
     if (save == TRUE) {
-      ggsave(
+      print(m_all)
+
+      si_save(
         here("Graphics", get_output_name(country,
                                          var = "VL",
-                                         agency = agency)),
-        plot = last_plot(),
-        scale = 1.2,
-        dpi = 400,
-        width = 10,
-        height = 7,
-        units = "in"
-      )
+                                         agency = agency)))
     }
 
     return(m_all)
@@ -650,6 +687,9 @@ map_peds_viralloads <-
     country <- {{cntry}}
     terr <- {{terr_raster}}
     facets <- {{facet_rows}}
+
+    # Notification
+    print(country)
 
     # Check for valid data
     n <- df_vl %>%
@@ -753,21 +793,26 @@ map_generic <-
     terr <- {{terr_raster}}
     facets <- {{facet_rows}}
 
+
     # Country boundaries
     df_geo0 <- df_geo %>%
-      filter(countryname == country, type == "OU")
+      filter(operatingunit == country, label == "country")
+
+    df_geo1 <- df_geo %>%
+      filter(operatingunit == country, label == "snu1")
 
     # PSNU Geo + VL data
     df_geo2 <- df_geo %>%
-      filter(countryname == country, type == "PSNU") %>%
+      filter(countryname == country) %>%
       left_join(df_oth, by = c("uid" = "psnuuid")) %>%
       filter(!is.na({{mapvar}}))
 
     # Basemap
-    base_map <-
-      get_basemap(spdf = df_geo,
-                  cntry = country,
-                  terr_raster = terr)
+    base_map <- terrain_map(countries = lookup_country(country),
+                            adm0 = df_geo0,
+                            adm1 = df_geo1,
+                            mask = TRUE,
+                            terr = terr)
 
     # Thematic map
     theme_map <-
@@ -817,6 +862,7 @@ map_generic <-
     # Update legend size and position
     theme_map <- theme_map +
       theme(
+        legend.title = element_blank(),
         legend.position =  "bottom",
         legend.direction = "horizontal",
         legend.key.width = ggplot2::unit(1.5, "cm"),
@@ -882,6 +928,25 @@ map_vlc_eid <-
     varname <- df_oth %>% dplyr::select({{mapvar}}) %>% names()
     facets <- {{facet_rows}}
 
+    # Notification
+    print(country)
+
+    # Check valid data
+    n_vl <- df_vl %>%
+      filter(operatingunit == country,
+             is.na(VLC)) %>%
+      nrow()
+
+    n_eid <- df_oth %>%
+      filter(operatingunit == country,
+             !is.na(eid_cov_under2)) %>%
+      nrow()
+
+    if (n_vl == 0 | n_eid == 0) {
+      return(NULL)
+    }
+
+    # Map
     vlc <- map_viralload(
       spdf = df_geo,
       df = df_vl,
