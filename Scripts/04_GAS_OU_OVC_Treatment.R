@@ -3,7 +3,7 @@
 ##  PURPOSE: Geo-depiction of VL - % not covered
 ##  LICENCE: MIT
 ##  DATE:    2020-09-04
-##  UPDATED: 2020-11-16
+##  UPDATED: 2021-03-02
 
 # Libraries
 library(tidyverse)
@@ -39,13 +39,9 @@ dir_data <- "Data"
 dir_dataout <- "Dataout"
 dir_gis <- "GIS"
 dir_graphics <- "Graphics"
-dir_geodata <- "../../GEODATA/PEPFAR"
-dir_terr <- "../../GEODATA/RASTER"
-dir_merdata <- "../../MERDATA"
-
-## Q3 MER Data
-
-psnu_im <- "^MER_.*_PSNU_IM_.*_20201113_v1_1.zip$"
+dir_geodata <- si_path("path_vector")
+dir_terr <- si_path("path_raster")
+dir_merdata <- si_path("path_msd")
 
 ## Reporting Filters
 rep_agency = "USAID"
@@ -54,13 +50,30 @@ rep_agencies <- c("USAID", "HHS/CDC")
 age_group <- "<20" # options are: "<15", "<20", "All"
 age_groups <- c("<15", "<20")
 
-rep_fy = 2020
-rep_qtr = 4 # Data available for Q2 & 4
+rep_fy = 2021
+rep_qtr = 1 # Data available for Q2 & 4
 
 rep_pd = rep_fy %>%
     as.character() %>%
     str_sub(3,4) %>%
     paste0("FY", ., "Q", rep_qtr)
+
+
+## MER Data - get the latest MSD PSNU x IM file
+
+file_psnu_im <- return_latest(
+    folderpath = dir_merdata,
+    pattern = "^MER_.*_PSNU_IM_.*_20210212_v1_1.zip$",
+    recursive = FALSE
+)
+
+## Shapefile path
+file_shp <- return_latest(
+    folderpath = dir_geo,
+    pattern = "VcPepfarPolygons.*.shp",
+    recursive = TRUE
+)
+
 
 
 # FUNCTIONS ---------------------------------------------------------
@@ -101,7 +114,8 @@ get_title <- function(country, var = NULL) {
 get_caption <- function(country,
                         age = "<20",
                         agency = "All Agencies",
-                        var = "Proxy Coverage") {
+                        var = "Proxy Coverage",
+                        source = "FY21Q1i") {
     # Params
     var <- str_replace_all({{var}}, "_", " ")
     agency <- {{agency}}
@@ -110,7 +124,8 @@ get_caption <- function(country,
 
     # Build caption
     caption <- paste0(
-        "*NOTE: Scales are truncated to 100% - Data Source: FY20Q4i MSD\n",
+        "*NOTE: Scales are truncated to 100% - Data Source: ",
+        source, " MSD\n",
         var, " = OVC_HIV_STAT_POS ", agency, "/ TX_CURR Age ", age, " All Agencies\n",
         "Shown for PSNUs in which USAID is the only agency with OVC Programming\n",
         toupper({{country}}), " - Produced by OHA/SIEI on ", format(Sys.Date(), "%Y%m%d")
@@ -128,7 +143,7 @@ get_caption <- function(country,
 #' @return plot file name
 #'
 get_output_name <- function(country,
-                            rep_pd = "FY20Q4",
+                            rep_pd = "FY21Q1",
                             var = "Proxy Coverage",
                             age = NULL,
                             agency = NULL) {
@@ -160,18 +175,6 @@ get_output_name <- function(country,
 
 # DATA --------------------------------------------------------------
 
-    ## MSD
-
-    ## File path + name
-    file_psnu_im <- list.files(
-            path = dir_merdata,
-            pattern = psnu_im,
-            recursive = TRUE,
-            full.names = TRUE
-        ) %>%
-        sort() %>%
-        last()
-
     ## MER PSNU Data
     df_psnu <- vroom(file_psnu_im, col_types = c(.default = "c"))
 
@@ -184,18 +187,22 @@ get_output_name <- function(country,
     terr <- get_raster(terr_path = dir_terr)
 
     ## ORGs
-    spdf_pepfar <- build_spdf(
-        dir_geo = paste0(dir_geodata, "/VcPepfarPolygons_2020.07.24"),
-        df_psnu = df_psnu
-    )
+    spdf_pepfar <- file_shp %>% sf::read_sf()
 
+    df_attrs <- gisr::get_ouuids() %>%
+        filter(!str_detect(operatingunit, " Region$")) %>%
+        pull(operatingunit) %>%
+        map_dfr(.x, .f = ~get_attributes(country = .x))
+
+    spdf_pepfar <- spdf_pepfar %>%
+        left_join(df_attrs, by = c("uid" = "id"))
 
     ## MER Data Munging
 
     ## Proxy OVC Coverage
     df_ovc_cov <- extract_ovc_coverage(df_msd = df_psnu,
                                        rep_fy = rep_fy,
-                                       rep_age = "<20", #age_group, #<15 or <20
+                                       rep_age = "<20",   #age_group, #<15 or <20
                                        rep_agency = NULL, #rep_agency,
                                        rep_pd = rep_pd,
                                        sumlevel = "PSNU") # PSNU or SNU1
