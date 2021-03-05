@@ -18,6 +18,7 @@
   library(ggtext)
   library(sf)
   library(ggrepel)
+  library(ggnewscale)
   library(patchwork)
   library(glue)
   library(ICPIutilities)
@@ -79,9 +80,11 @@
   #' @param country  Ou / Country name
   #'
   art_saturation_map <-
-    function(spdf_art, spdf, terr, country, lbl_size = 2) {
+    function(spdf_art, spdf,
+             terr, country,
+             lbl_size = 3) {
 
-      print(country)
+    print(country)
 
     # Extract admin 0 and 1 for basemap
     admin0 <- spdf %>%
@@ -105,7 +108,25 @@
                 filter(operatingunit == country),
               aes(fill = ART_SAT),
               lwd = .3,
-              color = grey10k) +
+              color = grey10k,
+              show.legend = F) +
+      scale_fill_si(
+        palette = "genoas", #"burnt_siennas", #
+        discrete = FALSE,
+        alpha = 0.3,
+        na.value = NA,
+        breaks = seq(0, 1, .25),
+        limits = c(0, 1),
+        labels = percent
+      ) +
+      new_scale_fill() +
+      geom_sf(data = spdf_art %>%
+                filter(operatingunit == country,
+                       ART_SAT >= 0.90),
+              aes(fill = ART_SAT),
+              lwd = .3,
+              color = grey10k,
+              alpha = .6) +
       geom_sf(data = admin0,
               colour = grey10k,
               fill = NA,
@@ -116,17 +137,28 @@
               size = .3) +
       geom_sf_text(data = spdf_art %>%
                      filter(operatingunit == country,
+                            ART_SAT >= .9,
                             usaid_flag == "USAID"),
-                   aes(label = paste0(psnu, "\n", percent(ART_SAT, 1))),
+                   #aes(label = paste0(psnu, "\n", percent(ART_SAT, 1))),
+                   aes(label = percent(ART_SAT, 1)),
                    size = lbl_size,
                    color = grey10k) +
-      scale_fill_si(
-        palette = "genoas",
-        discrete = FALSE,
-        alpha = 0.6,
+      # scale_fill_si(
+      #   palette = "burnt_siennas", #"genoas",
+      #   discrete = FALSE,
+      #   alpha = 0.6,
+      #   na.value = NA,
+      #   breaks = seq(0, 1, .25),
+      #   limits = c(0, 1),
+      #   labels = percent
+      # ) +
+      scale_fill_viridis_c(
+        option = "inferno",
+        alpha = 0.7,
+        direction = -1,
         na.value = NA,
-        breaks = seq(0, 1, .25),
-        limits = c(0, 1),
+        breaks = seq(.9, 1, .1),
+        limits = c(.9, 1),
         labels = percent
       ) +
       labs(
@@ -171,7 +203,7 @@
       str_to_lower(fundingagency) != "dedup",
       indicator %in% c("TX_PVLS", "TX_CURR"),
       standardizeddisaggregate %in% c("Total Numerator", "Total Denominator")
-    ) %>% view()
+    ) %>%
     rename(countryname = countrynamename) %>%
     mutate(
       indicator = if_else(
@@ -259,9 +291,7 @@
     left_join(df_tx_locs, by = c("operatingunit", "psnuuid"))
 
 
-
-  df_tx %>% glimpse()
-
+  # Join to spatial file
   spdf_tx <- spdf_pepfar %>%
     left_join(df_tx, by = c("uid" = "psnuuid",
                             "operatingunit" = "operatingunit",
@@ -280,23 +310,38 @@
 
   # maps for Pre-POART Slide deck
   c("Nigeria", "Uganda", "Zambia") %>%
+  #c("Zambia") %>%
     map(function(cntry) {
 
       map <- art_saturation_map(spdf_art = spdf_tx,
                          spdf = spdf_pepfar,
                          terr = terr,
-                         country = cntry)
+                         country = cntry,
+                         lbl_size = 2)
 
-      print(map)
+      #print(map)
+
+      # si_save(
+      #   filename = file.path(
+      #     dir_graphics,
+      #     paste0("FY21Q1 - ",
+      #     str_to_upper(cntry),
+      #     " - ART Saturation - ",
+      #     format(Sys.Date(), "%Y%m%d"),
+      #     ".svg")),
+      #   plot = map,
+      #   width = 7,
+      #   height = 7)
 
       si_save(
         filename = file.path(
           dir_graphics,
           paste0("FY21Q1 - ",
-          str_to_upper(cntry),
-          " - ART Saturation - ",
-          format(Sys.Date(), "%Y%m%d"),
-          ".png")),
+                 str_to_upper(cntry),
+                 " - ART Saturation - ",
+                 format(Sys.Date(), "%Y%m%d"),
+                 ".png")),
+        plot = map,
         width = 7,
         height = 7)
 

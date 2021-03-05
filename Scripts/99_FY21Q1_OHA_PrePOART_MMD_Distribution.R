@@ -18,9 +18,11 @@
   library(ggtext)
   library(sf)
   library(ggrepel)
+  library(tidytext)
   library(patchwork)
   library(glue)
   library(ICPIutilities)
+  library(rnaturalearth)
 
   source("./Scripts/00_Geo_Utilities.R")
   source("./Scripts/00_VL_Utilities.R")
@@ -72,50 +74,130 @@
 
 # FUNCTIONS ----
 
+  #' @title MMD Map
+  #'
+  #' @param df      MMD Processed DataFrame
+  #' @param basemap Basemap as ggplot plot
+  #' @param len     MMD Duration
+  #'
+  mmd_map <- function(df, basemap,
+                      len = "3+") {
+
+    print(len)
+
+    # Map
+    df_mmd <- df %>%
+      filter(mmd_len == {{len}})
+
+    #lbl_color <- if_else(len == "6+", grey60k, grey20k)
+
+    basemap +
+      geom_sf(data = df_mmd,
+              aes(fill = mmd_share),
+              lwd = .3,
+              color = grey10k) +
+      geom_sf(data = afr_countries,
+              colour = grey10k,
+              fill = NA,
+              size = .3) +
+      geom_sf_text(data = df_mmd %>%
+                     mutate(lbl_color = if_else(mmd_share > .3, grey20k, grey80k)),
+                   #aes(label = paste0(countryname, "\n", percent(mmd_share, 1))),
+                   aes(label = percent(mmd_share, 1), color = lbl_color),
+                   size = 2
+                   ) +
+      scale_fill_si(
+        palette = "scooters",
+        discrete = FALSE,
+        alpha = 0.8,
+        na.value = NA,
+        breaks = seq(0, 1, .25),
+        limits = c(0, 1),
+        labels = percent
+      ) +
+      scale_color_identity() +
+      facet_wrap(~period, nrow = 1) +
+      labs(
+        #title = "DRAFT DO NOT USE \nMMD3+ SCALING UP IN AFRICA",
+        #subtitle = "% Treatment by MMD Duration",
+        caption = paste0("MMD3+ = TX_CURR[", len, "] / TX_CURR",
+                         "\nNo PEPFAR and/or TX Programs in grayed out countries",
+                         "\nSouth Africa's data has been removed for completness reasons.",
+                         "\nSource: FY21Q1i PSNU x IM MSDs, Produced on ",
+                         format(Sys.Date(), "%Y-%m-%d"))) +
+      si_style_map() +
+      theme(plot.title = element_text(color = usaid_red),
+            plot.subtitle = element_text(color = usaid_red),
+            plot.caption = element_text(family = "source sans pro"))
+  }
+
 # DATA ----
 
   # MSD
   df_psnu <- file_psnu_im %>% read_msd()
 
   # SPATIAL DATA
+
+  ## PEPFAR Boundaries
   terr <- gisr::get_raster(terr_path = dir_terr)
 
   spdf_pepfar <- file_shp %>% sf::read_sf()
 
-  df_attrs <- gisr::get_ouuids() %>%
-    filter(!str_detect(operatingunit, " Region$")) %>%
-    pull(operatingunit) %>%
-    map_dfr(.x, .f = ~get_attributes(country = .x))
+  # working with country boundaries only
+  df_ous <- glamr::get_outable(datim_user(), datim_pwd())
 
   spdf_pepfar <- spdf_pepfar %>%
-    left_join(df_attrs, by = c("uid" = "id"))
+    left_join(df_ous, by = c("uid" = "countryname_uid"))
 
 
-# DATA MMD 3+ months
+  ## NE Admins
+
+  # Get country boundaries
+  africa <- ne_countries(continent = "africa", returnclass = "sf") %>%
+    st_transform(crs = st_crs(4326)) %>%
+    dplyr::select(iso3 = sov_a3, name, admin, sovereignt) %>%
+    mutate(
+      iso3 = case_when(
+        iso3 == "SDS" ~ "SSD",
+        TRUE ~ iso3
+      )
+    )
+
+  # Append PEPFAR OUs
+  afr_countries <- africa %>%
+    left_join(df_ous, by = c("iso3" = "countryname_iso")) %>%
+    filter(!is.na(country_lvl))
+
+
+# DATA MMD Distribution ----
 
   df_mmd <- df_psnu %>%
     filter(
       fiscal_year %in% c(2020, 2021), # Needed for Q1 vl
       fundingagency == "USAID",
       indicator %in% c("TX_CURR"),
-      standardizeddisaggregate %in% c("Age/Sex/ARVDispense/HIVStatus")
-      #otherdisaggregate != "ARV Dispensing Quantity -	Less than 3 months"
+      standardizeddisaggregate %in% c("Age/Sex/ARVDispense/HIVStatus",
+                                      "Total Numerator")
     ) %>%
     reshape_msd(clean = TRUE) %>%
     filter(period_type == "results") %>%
+    rename(countryname = countrynamename) %>%
     mutate(
-      otherdisaggregate = str_remove(otherdisaggregate,
-                                     "ARV Dispensing Quantity - "),
+      otherdisaggregate = str_remove(
+        otherdisaggregate, "ARV Dispensing Quantity - "),
       otherdisaggregate = case_when(
         otherdisaggregate == "Less than 3 months" ~ "<3",
         otherdisaggregate == "3 to 5 months" ~ "3-5",
-        otherdisaggregate == "6 or more months" ~ "6+"
+        otherdisaggregate == "6 or more months" ~ "6+",
+        is.na(otherdisaggregate) ~ "tn",
+        TRUE ~ otherdisaggregate
       )) %>%
-    group_by(period, operatingunit, operatingunituid, otherdisaggregate) %>%
+    group_by(period, operatingunit, operatingunituid, countryname, otherdisaggregate) %>%
     summarise_at(vars(value), sum, na.rm = TRUE) %>%
-    ungroup()
+    ungroup() %>%
+    filter(period %in% c("FY20Q4", "FY21Q1"))
 
-
+  # Track MMD 3+ for the last 2 Qtrs
   df_mmd_geq3 <- df_mmd %>%
     mutate(
       otherdisaggregate = case_when(
@@ -124,6 +206,81 @@
         TRUE ~ otherdisaggregate
       )
     ) %>%
-    group_by(period, operatingunit, operatingunituid) %>%
-    mutate(mmd_share = value / sum(value)) %>%
+    group_by(period, operatingunit, operatingunituid, countryname, otherdisaggregate) %>%
+    summarise_at(vars(value), sum, na.rm = TRUE) %>%
     ungroup()
+
+
+  # Track MMD 6+ for the last 2 Qtrs
+  df_mmd_share <- df_mmd %>%
+    filter(otherdisaggregate %in% c("3-5", "6+")) %>%
+    bind_rows(df_mmd_geq3) %>%
+    group_by(period, operatingunit, operatingunituid, countryname) %>%
+    mutate(mmd_share = value / value[otherdisaggregate == 'tn']) %>%
+    ungroup() %>%
+    rename(mmd_len = otherdisaggregate)
+
+  df_mmd_share %>% glimpse()
+
+  spdf_mmd <- afr_countries %>%
+    left_join(df_mmd_share, by = "countryname") %>%
+    filter(countryname != "South Africa", !is.na(mmd_len)) %>%
+    mutate(
+      countryname = case_when(
+        countryname == "Democratic Republic of the Congo" ~ "DRC",
+        TRUE ~ countryname
+      )
+    )
+
+
+
+# VIZ ----
+
+  # Bars
+  df_mmd_share %>%
+    filter(period == "FY21Q1") %>%
+    mutate(countryname = reorder_within(countryname, mmd_share, mmd_len)) %>%
+    ggplot(aes(reorder(countryname, mmd_share), mmd_share)) +
+    geom_col(aes(y = 1), fill = grey10k) +
+    geom_col(fill = usaid_blue) +
+    scale_x_reordered() +
+    scale_y_continuous(labels = percent) +
+    coord_flip() +
+    facet_wrap(~mmd_len, scales = "free_y") +
+    si_style_xgrid()
+
+  # countries
+  africa %>% gview()
+
+  # Basemap
+  basemap <- terrain_map(countries = africa,
+                         adm0 = africa,
+                         adm1 = africa,
+                         terr = terr,
+                         mask = TRUE)
+
+  # Batch this
+  spdf_mmd %>%
+    st_drop_geometry() %>%
+    filter(mmd_len != "tn") %>%
+    distinct(mmd_len) %>%
+    pull() %>%
+    map(function(mmd_len) {
+
+      map <- mmd_map(df = spdf_mmd,
+                     basemap = basemap,
+                     len = mmd_len)
+
+      si_save(
+        filename = file.path(
+          dir_graphics,
+          paste0("FY21Q1 - AFRICAN Country - MMD",
+                 mmd_len,
+                 " Duration - ",
+                 format(Sys.Date(), "%Y%m%d"),
+                 ".png")),
+        width = 7,
+        height = 7)
+
+      return(map_len)
+    })
