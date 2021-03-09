@@ -423,9 +423,11 @@
 
   # SA
   spdf_tx_sa <- spdf_tx %>%
-    filter(operatingunit == "South Africa", usaid_flag == "USAID",
+    filter(operatingunit == "South Africa",
+           usaid_flag == "USAID",
            #!psnu %in% c("City of Tshwane", "Ekurhuleni", "Ethekwini"))
-           !psnu %in% c("Vhembe", "Nelson Mandela Bay", "Cape Winelands"))
+           !psnu %in% c("Vhembe", "Nelson Mandela Bay", "Cape Winelands",
+                        "City of Tshwane", "Ekurhuleni"))
 
   spdf_tx_sa %>%
     filter(ART_SAT >= .9, usaid_flag == "USAID") %>%
