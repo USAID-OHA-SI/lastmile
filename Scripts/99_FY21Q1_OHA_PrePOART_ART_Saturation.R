@@ -82,9 +82,14 @@
   art_saturation_map <-
     function(spdf_art, spdf,
              terr, country,
-             lbl_size = 3) {
+             lbl_size = 3,
+             add_caption = TRUE) {
 
-    print(country)
+    # ART Sat
+    spdf_art <- spdf_art %>%
+        filter(operatingunit == country)
+
+    print(paste0(country, ": ", (spdf_art %>% nrow())))
 
     # Extract admin 0 and 1 for basemap
     admin0 <- spdf %>%
@@ -104,29 +109,19 @@
 
     # Produce thematic map
     map <- basemap +
-      geom_sf(data = spdf_art %>%
-                filter(operatingunit == country),
+      geom_sf(data = spdf_art,
               aes(fill = ART_SAT),
               lwd = .3,
-              color = grey10k,
-              show.legend = F) +
+              color = grey10k) +
       scale_fill_si(
-        palette = "genoas", #"burnt_siennas", #
+        palette = "burnt_siennas", #"scooters", #genoas", #, #
         discrete = FALSE,
-        alpha = 0.3,
+        alpha = 0.7,
         na.value = NA,
         breaks = seq(0, 1, .25),
         limits = c(0, 1),
         labels = percent
       ) +
-      new_scale_fill() +
-      geom_sf(data = spdf_art %>%
-                filter(operatingunit == country,
-                       ART_SAT >= 0.90),
-              aes(fill = ART_SAT),
-              lwd = .3,
-              color = grey10k,
-              alpha = .6) +
       geom_sf(data = admin0,
               colour = grey10k,
               fill = NA,
@@ -135,39 +130,32 @@
               colour = grey90k,
               fill = NA,
               size = .3) +
+      # geom_sf_text(data = spdf_art,
+      #              aes(label = paste0(psnu, "\n", percent(ART_SAT, 1))),
+      #              size = lbl_size,
+      #              color = grey10k) +
       geom_sf_text(data = spdf_art %>%
-                     filter(operatingunit == country,
-                            ART_SAT >= .9,
-                            usaid_flag == "USAID"),
-                   #aes(label = paste0(psnu, "\n", percent(ART_SAT, 1))),
+                     filter(ART_SAT >= .9, usaid_flag == "USAID"),
                    aes(label = percent(ART_SAT, 1)),
                    size = lbl_size,
-                   color = grey10k) +
-      # scale_fill_si(
-      #   palette = "burnt_siennas", #"genoas",
-      #   discrete = FALSE,
-      #   alpha = 0.6,
-      #   na.value = NA,
-      #   breaks = seq(0, 1, .25),
-      #   limits = c(0, 1),
-      #   labels = percent
-      # ) +
-      scale_fill_viridis_c(
-        option = "inferno",
-        alpha = 0.7,
-        direction = -1,
-        na.value = NA,
-        breaks = seq(.9, 1, .1),
-        limits = c(.9, 1),
-        labels = percent
-      ) +
-      labs(
-        #title = "ART SATUTATION IN USAID SUPPORTED PSNUs",
-        #subtitle = "PSNUs with labelled",
-        caption = paste0("ART Saturation = TX_CURR_SUBNAT / PLHIV (FY21)",
-                         "\nUSAID's PSNUs are labelled with name + percent saturation",
-                         "\nSource: FY21Q1i NAT_SUBNAT & PSNU x IM MSDs, Produced on ",
-                         format(Sys.Date(), "%Y-%m-%d"))) +
+                   color = grey10k)
+
+    # Add caption
+    if (add_caption == TRUE) {
+
+      map <- map +
+        labs(
+          #title = "ART SATUTATION IN USAID SUPPORTED PSNUs",
+          #subtitle = "PSNUs with labelled",
+          caption = paste0("ART Saturation = TX_CURR_SUBNAT / PLHIV (FY21)",
+                           "\nUSAID's PSNUs are labelled with name + percent saturation",
+                           "\nSource: FY21Q1i NAT_SUBNAT & PSNU x IM MSDs, Produced on ",
+                           format(Sys.Date(), "%Y-%m-%d")))
+
+      }
+
+    # Add theme
+    map <- map +
       si_style_map()
 
     return(map)
@@ -264,6 +252,33 @@
     distinct(operatingunit, psnuuid) %>%
     mutate(usaid_flag = "USAID")
 
+  df_tx_locs_sa <- df_psnu %>%
+    filter(operatingunit == "South Africa",
+           indicator == "TX_CURR",
+           standardizeddisaggregate %in% c("Age/Sex/HIVStatus", "KeyPop/HIVStatus"),
+           fundingagency == "USAID",
+           str_detect(psnu, "_Military", negate = TRUE),
+           fiscal_year == 2021) %>%
+    distinct(operatingunit, psnuuid, psnu, standardizeddisaggregate) %>%
+    mutate(usaid_flag = "USAID") %>%
+    mutate(
+      standardizeddisaggregate = str_replace_all(
+        standardizeddisaggregate,
+        "/", "_"
+      ),
+      disagg = case_when(
+        standardizeddisaggregate == "Age_Sex_HIVStatus" ~ "REG",
+        standardizeddisaggregate == "KeyPop_HIVStatus" ~ "KP",
+        TRUE ~ standardizeddisaggregate
+      )) %>%
+    pivot_wider(names_from = standardizeddisaggregate,
+                values_from = disagg) %>%
+    #filter(is.na(KeyPop_HIVStatus)) %>%
+    clean_psnu()
+
+  df_tx_locs_sa %>% pull(psnu)
+
+
   # ART Saturation: TX_CURR / PLHIV
   # df_tx <- df_vl %>%
   #   left_join(df_plhiv,
@@ -296,7 +311,8 @@
     left_join(df_tx, by = c("uid" = "psnuuid",
                             "operatingunit" = "operatingunit",
                             "countryname" = "countryname")) %>%
-    filter(!is.na(ART_SAT)) %>%
+    filter(label == "prioritization",
+           !is.na(ART_SAT)) %>%
     clean_psnu()
 
 
@@ -309,15 +325,19 @@
     pull()
 
   # maps for Pre-POART Slide deck
-  c("Nigeria", "Uganda", "Zambia") %>%
+  #c("Nigeria", "Uganda", "Zambia") %>%
+  c("South Africa", "Eswatini", "Mozambique") %>%
   #c("Zambia") %>%
     map(function(cntry) {
 
-      map <- art_saturation_map(spdf_art = spdf_tx,
+      size <- ifelse(cntry == "Nigeria", 4, 3)
+
+      map <- art_saturation_map(spdf_art = spdf_tx %>%
+                                  filter(usaid_flag == "USAID"),
                          spdf = spdf_pepfar,
                          terr = terr,
                          country = cntry,
-                         lbl_size = 2)
+                         lbl_size = size)
 
       #print(map)
 
@@ -347,4 +367,112 @@
 
       return(map)
     })
+
+  # Nigeria
+  spdf_tx_nga <- spdf_tx %>%
+    filter(operatingunit == "Nigeria",
+           label == "snu1")
+
+  spdf_tx_nga %>%
+    st_set_geometry(NULL) %>%
+    view()
+
+  # map
+  nga_map <- art_saturation_map(spdf_art = spdf_tx_nga,
+                            spdf = spdf_pepfar,
+                            terr = terr,
+                            country = "Nigeria",
+                            lbl_size = 2)
+
+  # bar chart
+  nga_bar <- spdf_tx_nga %>%
+    st_drop_geometry() %>%
+    mutate(label = paste0(psnu, " (", comma(PLHIV, 1), ")")) %>%
+    filter(operatingunit == "Nigeria",
+           usaid_flag == "USAID") %>%
+    ggplot(aes(reorder(label, PLHIV), PLHIV)) +
+    geom_col(aes(fill = ART_SAT), show.legend = F) +
+    geom_text(aes(label = percent(ART_SAT, 1)),
+              hjust = -.2,
+              size = 3,
+              color = usaid_darkgrey) +
+    scale_fill_si(
+      palette = "burnt_siennas",
+      discrete = FALSE,
+      alpha = 0.7,
+      breaks = seq(0, 1, .25),
+      limits = c(0, 1),
+      labels = percent
+    ) +
+    scale_y_continuous(labels = comma) +
+    coord_flip() +
+    labs(x = "", y = "") +
+    si_style_xgrid()
+
+  nga_plot <- (nga_map + nga_bar)
+
+  si_save(
+    filename = file.path(
+      dir_graphics,
+      paste0("FY21Q1 - NIGERIA - ART Saturation 2 - ",
+             format(Sys.Date(), "%Y%m%d"),
+             ".png")),
+    plot = nga_plot,
+    width = 10,
+    height = 5)
+
+  # SA
+  spdf_tx_sa <- spdf_tx %>%
+    filter(operatingunit == "South Africa", usaid_flag == "USAID",
+           #!psnu %in% c("City of Tshwane", "Ekurhuleni", "Ethekwini"))
+           !psnu %in% c("Vhembe", "Nelson Mandela Bay", "Cape Winelands"))
+
+  spdf_tx_sa %>%
+    filter(ART_SAT >= .9, usaid_flag == "USAID") %>%
+    pull(psnu)
+
+  # map
+  sa_map <- art_saturation_map(spdf_art = spdf_tx_sa,
+                            spdf = spdf_pepfar,
+                            terr = terr,
+                            country = "South Africa",
+                            lbl_size = 2)
+
+  # bar chart
+  sa_bar <- spdf_tx_sa %>%
+    st_drop_geometry() %>%
+    mutate(label = paste0(psnu, " (", percent(ART_SAT, 1), " ", comma(PLHIV, 1), ")")) %>%
+    ggplot(aes(reorder(label, PLHIV), PLHIV)) +
+    geom_col(aes(fill = ART_SAT), show.legend = F) +
+    # geom_text(aes(label = percent(ART_SAT, 1)),
+    #           hjust = -.2,
+    #           size = 3,
+    #           color = usaid_darkgrey) +
+    scale_fill_si(
+      palette = "burnt_siennas",
+      discrete = FALSE,
+      alpha = 0.7,
+      breaks = seq(0, 1, .25),
+      limits = c(0, 1),
+      labels = percent
+    ) +
+    scale_y_continuous(breaks = seq(0, max(spdf_tx_sa$PLHIV), 200000),
+                       labels = comma,
+                       position = "right") +
+    coord_flip() +
+    labs(x = "", y = "") +
+    si_style_xgrid()
+
+  sa_plot <- (sa_map + sa_bar)
+
+  si_save(
+    filename = file.path(
+      dir_graphics,
+      paste0("FY21Q1 - SOUTH AFRICA - ART Saturation 2 - ",
+             format(Sys.Date(), "%Y%m%d"),
+             ".png")),
+    plot = sa_plot,
+    width = 10,
+    height = 5)
+
 
