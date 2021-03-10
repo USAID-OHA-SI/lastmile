@@ -8,8 +8,6 @@
 # DEPENDENCIES ------------------------------------------------------------
 
   library(tidyverse)
-  library(readxl)
-  library(janitor)
   library(glitr)
   library(glamr)
   library(gisr)
@@ -18,7 +16,6 @@
   library(ggtext)
   library(sf)
   library(ggrepel)
-  library(ggnewscale)
   library(patchwork)
   library(glue)
   library(ICPIutilities)
@@ -83,11 +80,29 @@
     function(spdf_art, spdf,
              terr, country,
              lbl_size = 3,
+             full_label = FALSE,
              add_caption = TRUE) {
 
     # ART Sat
     spdf_art <- spdf_art %>%
         filter(operatingunit == country)
+
+    max <- spdf_art %>%
+      pull(ART_SAT) %>%
+      max()
+
+    max <- ifelse(max < 1, 1, max)
+
+    caption <- ifelse(country == "Nigeria",
+                      paste0("ART Saturation = TX_CURR / PLHIV (FY21)",
+                             "\nUSAID's PSNUs are labelled with name + percent saturation",
+                             "\nSource: FY21Q1i PSNU x IM MSDs, Produced on ",
+                             format(Sys.Date(), "%Y-%m-%d")),
+                      paste0("ART Saturation = TX_CURR_SUBNAT / PLHIV (FY21)",
+                             "\nUSAID's PSNUs are labelled with name + percent saturation",
+                             "\nSource: FY21Q1i NAT_SUBNAT & PSNU x IM MSDs, Produced on ",
+                             format(Sys.Date(), "%Y-%m-%d"))
+    )
 
     print(paste0(country, ": ", (spdf_art %>% nrow())))
 
@@ -118,8 +133,8 @@
         discrete = FALSE,
         alpha = 0.7,
         na.value = NA,
-        breaks = seq(0, 1, .25),
-        limits = c(0, 1),
+        breaks = seq(0, max, .25),
+        limits = c(0, max),
         labels = percent
       ) +
       geom_sf(data = admin0,
@@ -129,16 +144,24 @@
       geom_sf(data = admin0,
               colour = grey90k,
               fill = NA,
-              size = .3) +
-      # geom_sf_text(data = spdf_art,
-      #              aes(label = paste0(psnu, "\n", percent(ART_SAT, 1))),
-      #              size = lbl_size,
-      #              color = grey10k) +
-      geom_sf_text(data = spdf_art %>%
-                     filter(ART_SAT >= .9, usaid_flag == "USAID"),
-                   aes(label = percent(ART_SAT, 1)),
-                   size = lbl_size,
-                   color = grey10k)
+              size = .3)
+
+    # label control
+    if (full_label == TRUE) {
+      map <- map +
+        geom_sf_text(data = spdf_art,
+                     aes(label = paste0(psnu, "\n", percent(ART_SAT, 1))),
+                     size = lbl_size,
+                     color = grey10k)
+    }
+    else {
+      map <- map +
+        geom_sf_text(data = spdf_art %>%
+                       filter(ART_SAT >= .9, usaid_flag == "USAID"),
+                     aes(label = percent(ART_SAT, 1)),
+                     size = lbl_size,
+                     color = grey10k)
+    }
 
     # Add caption
     if (add_caption == TRUE) {
@@ -147,11 +170,7 @@
         labs(
           #title = "ART SATUTATION IN USAID SUPPORTED PSNUs",
           #subtitle = "PSNUs with labelled",
-          caption = paste0("ART Saturation = TX_CURR_SUBNAT / PLHIV (FY21)",
-                           "\nUSAID's PSNUs are labelled with name + percent saturation",
-                           "\nSource: FY21Q1i NAT_SUBNAT & PSNU x IM MSDs, Produced on ",
-                           format(Sys.Date(), "%Y-%m-%d")))
-
+          caption = caption)
       }
 
     # Add theme
@@ -183,49 +202,6 @@
 
 
 # MUNGE ----
-
-  # TX Viral Load
-  df_vl <- df_psnu %>%
-    filter(
-      fiscal_year %in% c(2020, 2021), # Needed for Q1 vl
-      str_to_lower(fundingagency) != "dedup",
-      indicator %in% c("TX_PVLS", "TX_CURR"),
-      standardizeddisaggregate %in% c("Total Numerator", "Total Denominator")
-    ) %>%
-    rename(countryname = countrynamename) %>%
-    mutate(
-      indicator = if_else(
-        indicator == "TX_PVLS" & numeratordenom == "D",
-        paste0(indicator, "_D"),
-        indicator
-      )
-    ) %>%
-    group_by(fiscal_year,
-             operatingunit,
-             countryname,
-             snu1,
-             psnuuid,
-             psnu,
-             indicator) %>%
-    summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
-    ungroup() %>%
-    reshape_msd(clean = TRUE) %>%
-    dplyr::select(-period_type) %>%
-    pivot_wider(names_from = indicator,
-                values_from = value) %>%
-    group_by(operatingunit, countryname, snu1, psnuuid, psnu) %>%
-    mutate(VLC = TX_PVLS_D / lag(TX_CURR, 2, order_by = period)) %>%
-    ungroup() %>%
-    mutate(
-      VLS = (TX_PVLS / TX_PVLS_D) * VLC,
-      VLnC = case_when(
-        VLC > 1 ~ 0,
-        TRUE ~ 1 - VLC
-      ),
-      fiscal_year = str_sub(period, 1, 4)
-    ) %>%
-    relocate(fiscal_year, .before = period) %>%
-    clean_psnu()
 
   # PLHIV
   df_plhiv <- df_nat %>%
@@ -273,10 +249,8 @@
       )) %>%
     pivot_wider(names_from = standardizeddisaggregate,
                 values_from = disagg) %>%
-    #filter(is.na(KeyPop_HIVStatus)) %>%
     clean_psnu()
 
-  df_tx_locs_sa %>% pull(psnu)
 
 
   # ART Saturation: TX_CURR / PLHIV
@@ -305,6 +279,36 @@
     filter(period == "FY21") %>%
     left_join(df_tx_locs, by = c("operatingunit", "psnuuid"))
 
+  # Deal with NGA Case: TX_CURR_NAT is lower that TX_CURR
+  df_psnu_tx <- df_psnu %>%
+    reshape_msd(clean = TRUE) %>%
+    filter(period_type == "results",
+           period == "FY21Q1",
+           indicator == "TX_CURR",
+           standardizeddisaggregate == "Total Numerator",
+           fundingagency != "Dedup")
+
+  df_psnu_tx %>% glimpse()
+
+
+  df_tx2 <- df_psnu_tx %>%
+    rename(countryname = countrynamename) %>%
+    group_by(operatingunit, countryname, snu1, psnuuid, psnu, indicator) %>%
+    summarise_at(vars(value), sum, na.rm = TRUE) %>%
+    ungroup() %>%
+    pivot_wider(names_from = indicator, values_from = value) %>%
+    left_join(df_plhiv %>% filter(period == "FY21"),
+              by = c("operatingunit", "countryname", "snu1", "psnuuid", "psnu")) %>%
+    rowwise() %>%
+    mutate(ART_SAT = if_else(operatingunit == "Nigeria",
+                             TX_CURR / PLHIV,
+                             TX_CURR_SUBNAT / PLHIV)) %>%
+    ungroup() %>%
+    filter(period == "FY21") %>%
+    left_join(df_tx_locs, by = c("operatingunit", "psnuuid"))
+
+  df_tx2 %>% glimpse()
+  df_tx2 %>% view()
 
   # Join to spatial file
   spdf_tx <- spdf_pepfar %>%
@@ -314,6 +318,17 @@
     filter(label == "prioritization",
            !is.na(ART_SAT)) %>%
     clean_psnu()
+
+
+  spdf_tx2 <- spdf_pepfar %>%
+    left_join(df_tx2, by = c("uid" = "psnuuid",
+                            "operatingunit" = "operatingunit",
+                            "countryname" = "countryname")) %>%
+    filter(label == "prioritization",
+           !is.na(ART_SAT)) %>%
+    clean_psnu()
+
+
 
 
 # VIZ ----
@@ -326,32 +341,21 @@
 
   # maps for Pre-POART Slide deck
   #c("Nigeria", "Uganda", "Zambia") %>%
-  c("South Africa", "Eswatini", "Mozambique") %>%
+  #c("South Africa", "Eswatini", "Mozambique") %>%
   #c("Zambia") %>%
+  c("Nigeria") %>%
     map(function(cntry) {
 
       size <- ifelse(cntry == "Nigeria", 4, 3)
 
-      map <- art_saturation_map(spdf_art = spdf_tx %>%
-                                  filter(usaid_flag == "USAID"),
-                         spdf = spdf_pepfar,
-                         terr = terr,
-                         country = cntry,
-                         lbl_size = size)
-
-      #print(map)
-
-      # si_save(
-      #   filename = file.path(
-      #     dir_graphics,
-      #     paste0("FY21Q1 - ",
-      #     str_to_upper(cntry),
-      #     " - ART Saturation - ",
-      #     format(Sys.Date(), "%Y%m%d"),
-      #     ".svg")),
-      #   plot = map,
-      #   width = 7,
-      #   height = 7)
+      map <- art_saturation_map(
+        spdf_art = spdf_tx2 %>%
+          filter(label == "prioritization",
+                 usaid_flag == "USAID"),
+        spdf = spdf_pepfar,
+        terr = terr,
+        country = cntry,
+        lbl_size = size)
 
       si_save(
         filename = file.path(
@@ -369,42 +373,37 @@
     })
 
   # Nigeria
-  spdf_tx_nga <- spdf_tx %>%
-    filter(operatingunit == "Nigeria",
-           label == "snu1")
-
-  spdf_tx_nga %>%
-    st_set_geometry(NULL) %>%
-    view()
 
   # map
   nga_map <- art_saturation_map(spdf_art = spdf_tx_nga,
                             spdf = spdf_pepfar,
                             terr = terr,
                             country = "Nigeria",
-                            lbl_size = 2)
+                            full_label = TRUE,
+                            lbl_size = 1.5)
 
   # bar chart
+  max_art <- spdf_tx_nga %>%
+    st_drop_geometry() %>%
+    pull(ART_SAT) %>%
+    max()
+
   nga_bar <- spdf_tx_nga %>%
     st_drop_geometry() %>%
-    mutate(label = paste0(psnu, " (", comma(PLHIV, 1), ")")) %>%
+    mutate(label = paste0(psnu, " (", percent(ART_SAT, 1), " ", comma(PLHIV, 1), ")")) %>%
     filter(operatingunit == "Nigeria",
            usaid_flag == "USAID") %>%
     ggplot(aes(reorder(label, PLHIV), PLHIV)) +
     geom_col(aes(fill = ART_SAT), show.legend = F) +
-    geom_text(aes(label = percent(ART_SAT, 1)),
-              hjust = -.2,
-              size = 3,
-              color = usaid_darkgrey) +
     scale_fill_si(
       palette = "burnt_siennas",
       discrete = FALSE,
       alpha = 0.7,
-      breaks = seq(0, 1, .25),
-      limits = c(0, 1),
+      breaks = seq(0, max_art, .25),
+      limits = c(0, max_art),
       labels = percent
     ) +
-    scale_y_continuous(labels = comma) +
+    scale_y_continuous(labels = comma, position = "right") +
     coord_flip() +
     labs(x = "", y = "") +
     si_style_xgrid()
