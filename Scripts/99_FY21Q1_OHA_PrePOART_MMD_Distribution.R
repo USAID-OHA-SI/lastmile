@@ -285,7 +285,7 @@
   # Batch this ----
   spdf_mmd %>%
     st_drop_geometry() %>%
-    filter(mmd_len %in% c("tn", "nr") %>%
+    filter(mmd_len %in% c("tn", "nr")) %>%
     distinct(mmd_len) %>%
     pull() %>%
     map(function(mmd_len) {
