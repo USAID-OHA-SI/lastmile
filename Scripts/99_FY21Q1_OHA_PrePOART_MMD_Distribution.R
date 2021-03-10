@@ -8,8 +8,6 @@
 # DEPENDENCIES ------------------------------------------------------------
 
   library(tidyverse)
-  library(readxl)
-  library(janitor)
   library(glitr)
   library(glamr)
   library(gisr)
@@ -81,35 +79,36 @@
   #' @param len     MMD Duration
   #'
   mmd_map <- function(df, basemap,
-                      len = "3+") {
+                      len = "3+",
+                      pal = "genoas") {
 
     print(len)
+    print(pal)
 
     # Map
     df_mmd <- df %>%
-      filter(mmd_len == {{len}})
+      dplyr::filter(mmd_len == {{len}})
 
-    #lbl_color <- if_else(len == "6+", grey60k, grey20k)
+    print(df_mmd %>% nrow())
 
     basemap +
       geom_sf(data = df_mmd,
               aes(fill = mmd_share),
-              lwd = .3,
+              size = .3,
               color = grey10k) +
       geom_sf(data = afr_countries,
-              colour = grey10k,
+              color = grey10k,
               fill = NA,
               size = .3) +
       geom_sf_text(data = df_mmd %>%
                      mutate(lbl_color = if_else(mmd_share > .3, grey20k, grey80k)),
                    #aes(label = paste0(countryname, "\n", percent(mmd_share, 1))),
                    aes(label = percent(mmd_share, 1), color = lbl_color),
-                   size = 2
-                   ) +
+                   size = 2) +
       scale_fill_si(
-        palette = "scooters",
+        palette = pal, #"genoas", "moody_blues", "scooters",
         discrete = FALSE,
-        alpha = 0.8,
+        alpha = 0.85,
         na.value = NA,
         breaks = seq(0, 1, .25),
         limits = c(0, 1),
@@ -210,17 +209,35 @@
     summarise_at(vars(value), sum, na.rm = TRUE) %>%
     ungroup()
 
+  # Track MMD Not Reported
+  df_mmd_notr <- df_mmd %>%
+    mutate(otherdisaggregate = "nr") %>%
+    group_by(period, operatingunit, operatingunituid, countryname, otherdisaggregate) %>%
+    summarise(value = ) %>%
+    ungroup()
 
-  # Track MMD 6+ for the last 2 Qtrs
+
+  # Track MMD all for the last 2 Qtrs
   df_mmd_share <- df_mmd %>%
     filter(otherdisaggregate %in% c("3-5", "6+")) %>%
     bind_rows(df_mmd_geq3) %>%
+    bind_rows(df_mmd_notr) %>% #view()
     group_by(period, operatingunit, operatingunituid, countryname) %>%
-    mutate(mmd_share = value / value[otherdisaggregate == 'tn']) %>%
+    mutate(
+      value = case_when(
+        otherdisaggregate == "nr" ~
+          (value[otherdisaggregate == 'tn'] -
+             sum(value[otherdisaggregate %in% c('<3', '3-5', '6+')])),
+        TRUE ~ value
+      ),
+      value = if_else(value < 0, 0, value),
+      mmd_share = value / value[otherdisaggregate == 'tn']
+    ) %>%
     ungroup() %>%
     rename(mmd_len = otherdisaggregate)
 
   df_mmd_share %>% glimpse()
+  df_mmd_share %>% view()
 
   spdf_mmd <- afr_countries %>%
     left_join(df_mmd_share, by = "countryname") %>%
@@ -239,7 +256,13 @@
   # Bars
   df_mmd_share %>%
     filter(period == "FY21Q1") %>%
-    mutate(countryname = reorder_within(countryname, mmd_share, mmd_len)) %>%
+    mutate(
+      countryname = case_when(
+        countryname == "Democratic Republic of the Congo" ~ "DRC",
+        TRUE ~ countryname
+      ),
+      countryname = reorder_within(countryname, mmd_share, mmd_len)
+    ) %>%
     ggplot(aes(reorder(countryname, mmd_share), mmd_share)) +
     geom_col(aes(y = 1), fill = grey10k) +
     geom_col(fill = usaid_blue) +
@@ -259,28 +282,39 @@
                          terr = terr,
                          mask = TRUE)
 
-  # Batch this
+  # Batch this ----
   spdf_mmd %>%
     st_drop_geometry() %>%
-    filter(mmd_len != "tn") %>%
+    filter(mmd_len %in% c("tn", "nr") %>%
     distinct(mmd_len) %>%
     pull() %>%
     map(function(mmd_len) {
 
+      cols <- case_when(
+        mmd_len == "<3" ~ "burnt_siennas",
+        mmd_len == "6+" ~ "genoas",
+        mmd_len == "3+" ~ "moody_blues",
+        mmd_len == "nr" ~ "trolley_greys",
+        TRUE ~ "old_roses"
+      )
+
       map <- mmd_map(df = spdf_mmd,
                      basemap = basemap,
-                     len = mmd_len)
+                     len = mmd_len,
+                     pal = cols)
 
       si_save(
         filename = file.path(
           dir_graphics,
-          paste0("FY21Q1 - AFRICAN Country - MMD",
+          paste0("FY21Q1 - AFRICAN Countries - MMD",
                  mmd_len,
                  " Duration - ",
                  format(Sys.Date(), "%Y%m%d"),
                  ".png")),
-        width = 7,
-        height = 7)
+        plot = map,
+        width = 9.54,
+        height = 5,
+        scale = 1.4)
 
-      return(map_len)
+      return(mmd_len)
     })
