@@ -104,7 +104,7 @@
                      mutate(lbl_color = if_else(mmd_share > .3, grey20k, grey80k)),
                    #aes(label = paste0(countryname, "\n", percent(mmd_share, 1))),
                    aes(label = percent(mmd_share, 1), color = lbl_color),
-                   size = 2) +
+                   size = 3) +
       scale_fill_si(
         palette = pal, #"genoas", "moody_blues", "scooters",
         discrete = FALSE,
@@ -285,9 +285,11 @@
   # Batch this ----
   spdf_mmd %>%
     st_drop_geometry() %>%
-    filter(mmd_len %in% c("tn", "nr")) %>%
+    filter(!mmd_len %in% c("tn", "nr")) %>%
     distinct(mmd_len) %>%
-    pull() %>%
+    pull()
+
+  c("3+", "6+") %>%
     map(function(mmd_len) {
 
       cols <- case_when(
