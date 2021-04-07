@@ -26,7 +26,6 @@
 
   # Code re-use: placeholder till migration to one of the our packages
   source("./Scripts/00_Geo_Utilities.R")
-  source("./Scripts/00_VL_Utilities.R")
 
 # SETUP ----
 
@@ -48,7 +47,7 @@
   rep_agencies <- c("USAID", "HHS/CDC")
 
   rep_fy = 2021
-  rep_qtr = 1
+  rep_qtr = 2
 
   rep_pd = rep_fy %>%
     as.character() %>%
@@ -254,6 +253,8 @@
 # MUNGE ----
 
   # PLHIV
+  #
+  df_nat %>% glimpse()
 
   df_plhiv <- df_nat %>%
     reshape_msd(clean = TRUE) %>%
@@ -267,6 +268,8 @@
     summarise_at(vars(value), sum, na.rm = TRUE) %>%
     ungroup() %>%
     pivot_wider(names_from = indicator, values_from = value)
+
+    df_plhiv %>% glimpse()
 
   # USAID Treatment
 
