@@ -208,37 +208,125 @@ append_attributes <- function(spdf, df_ous, df_snus, df_psnus){
 }
 
 
-#' Get OrgUnit Attributes
+#' Get Orgunit Boundaries Attributes
 #'
-#' @param country ou/country
+#' @param country    OU/country
+#' @param folderpath Local directory of files
 #' @return df
 #'
-get_attributes <- function(country) {
+get_attributes <- function(country,
+                           folderpath = NULL) {
 
-  print(country)
+  file_pattern <- paste0("^orghierarchy - ",
+                         str_to_lower(country),
+                         " - \\d{8}.csv$")
 
-  locs <- gisr::extract_locations(country = country, add_geom = FALSE)
+  # Get attrs from local drive
+  if (!is.null(folderpath)) {
 
-  labels <- locs %>%
+    message(paste0("Searching for: ", file_pattern))
+
+    file_attrs <- glamr::return_latest(
+      folderpath,
+      pattern = file_pattern)
+
+    message(glue("Reading from: {basename(file_attrs)}"))
+
+    df_attrs <- file_attrs %>%
+      readr::read_csv(file = ., col_types = c(.default = "c"))
+      #vroom::vroom(file = ., col_types = c(.default = "c"))
+
+    return(df_attrs)
+  }
+
+  message(country)
+
+  # Get attrs from datim
+  df_attrs <- gisr::extract_locations(country = country, add_geom = FALSE)
+
+  labels <- df_attrs %>%
     distinct(label) %>%
     pull()
 
   # Use psnu as snu1
   if (!"snu1" %in% labels) {
-    df_psnu <- locs %>%
+    df_snu <- df_attrs %>%
       dplyr::filter(label == "prioritization") %>%
       dplyr::mutate(label = "snu1")
 
-    locs <- locs %>%
-      dplyr::bind_rows(df_psnu)
+    df_attrs <- df_attrs %>%
+      dplyr::bind_rows(df_snu)
   }
 
   # Filter out facilities and communities
-  locs <- locs %>%
+  df_attrs <- df_attrs %>%
     dplyr::select(-path) %>%
-    dplyr::filter(label != "facility")
+    dplyr::filter(label != "facility") %>%
+    dplyr::select(id, level, label, name,
+                  operatingunit_iso, operatingunit,
+                  countryname_iso, countryname)
 
-  return(locs)
+  return(df_attrs)
+}
+
+#' @title Extract Orgunit Boundaries Attributes
+#'
+#' @param country ou/country
+#' @param
+#' @return df
+#'
+extract_attributes <-
+  function(country,
+           folderpath = NULL) {
+
+  # local dir & filename
+  dir <- folderpath
+
+  if (!is.null(dir) && !dir.exists(dir)) {
+    message(glue("Directory does not exist: {folderpath}"))
+    stop("Invalid folderpath")
+  }
+
+  # Default folder
+  path_vector <- glamr::si_path("path_vector")
+
+  if (is.null(dir) && !is.null(path_vector) && dir.exists(path_vector)) {
+    message(glue("Data will be extracted to: {path_vector}"))
+    dir <- dir_geodata
+  }
+
+  # No folder identified
+  if (is.null(dir)) {
+    message("Destination folder is not set")
+    message("Consider glamr::set_path(folderpath_vector = '../<folder>')")
+
+    stop("folderpath is not set")
+  }
+
+  filename <- file.path(dir,
+                        glue("orghierarchy - ",
+                             "{stringr::str_to_lower(country)} - ",
+                             "{format(Sys.Date(), '%Y%m%d')}",
+                             ".csv"))
+
+  #get and save country attributes
+  attrs <- tryCatch(
+    get_attributes(country),
+    error = function(err) {
+      print(err)
+      return(NULL)
+    },
+    warning = function(warn) {
+      print(warn)
+      message("See warning(s) above")
+    }
+  )
+
+  #Write to csv file
+  if (!is.null(attrs) & nrow(attrs) > 0) {
+    message(glue("Writing data to: {basename(filename)}"))
+    readr::write_csv(x = attrs, file = filename)
+  }
 }
 
 #' @title Get Terrain Raster dataset

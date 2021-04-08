@@ -1,6 +1,6 @@
 ##  PROJECT: LMA/Geospatial Distributions
 ##  AUTHOR:  Baboyma Kagniniwa | USAID
-##  PURPOSE: MMD Distribution
+##  PURPOSE: ART Saturation Distribution
 ##  LICENCE: MIT
 ##  DATE:    2021-03-02
 
