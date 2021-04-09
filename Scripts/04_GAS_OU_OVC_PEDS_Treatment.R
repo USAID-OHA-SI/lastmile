@@ -70,7 +70,13 @@
 # Import Data ----
 
   # MER Data
-  df_psnu <- file_psnu_im %>% read_msd()
+  df_psnu <- file_psnu_im %>%
+    read_msd()
+
+  df_psnu <- df_psnu %>%
+    rename(countryname = countrynamename) %>%
+    clean_agency() %>%
+    clean_psnu()
 
   # Geo Data
   terr <- gisr::get_raster(terr_path = dir_terr)
@@ -80,21 +86,7 @@
   # Ou / Countries
   ous <- gisr::get_ouuids(add_details = TRUE)
 
-  # Extract Orgs Hierarchy
-  # ous %>%
-  #   filter(!str_detect(operatingunit, " Region$")) %>%
-  #   pull(countryname) %>%
-  #   map(.x, .f = ~extract_attributes(country = .x, folderpath = dir_attrs))
-  #
-  extract_attributes(country = "Nigeria")
-  extract_attributes(country = "Nigeria", folderpath = "./Dataaa")
-  extract_attributes(country = "Nigeria", folderpath = dir_attrs)
-
-  #get_attributes(country = "Nigeria", folderpath = "./Data")
-  get_attributes(country = "Nigeria", folderpath = dir_attrs)
-  #get_attributes(country = "Nigeria")
-
-  df_attrs <- gisr::get_ouuids() %>%
+  df_attrs <- ous %>%
     filter(!str_detect(operatingunit, " Region$")) %>%
     pull(operatingunit) %>%
     map_dfr(.x, .f = ~get_attributes(country = .x, folderpath = dir_attrs))
@@ -104,16 +96,114 @@
 
 # MUNGE ----
 
-  ## Proxy OVC Coverage
-  df_ovc <- extract_ovc_coverage(df_msd = df_psnu,
-                                     rep_fy = rep_fy,
-                                     rep_age = "<20",   #age_group, #<15 or <20
-                                     rep_agency = NULL, #rep_agency,
-                                     rep_pd = rep_pd,
-                                     sumlevel = "PSNU") # PSNU or SNU1
+  # OVC
+  inds_ovc <- df_psnu %>%
+    filter(str_detect(indicator, "OVC")) %>%
+    distinct(indicator) %>%
+    pull()
+
+  ous_ovc <- df_psnu %>%
+    filter(fiscal_year == 2020,
+           indicator == "OVC_SERV") %>%
+    distinct(operatingunit, countrynamename)
+
+  df_ovc <- df_psnu %>%
+    filter(fiscal_year == 2020,
+           indicator == "OVC_SERV",
+           standardizeddisaggregate == "Total Numerator",
+           str_to_lower(fundingagency) != "dedup") %>%
+    mutate(ovc_program = if_else(!is.na(cumulative), TRUE, FALSE)) %>%
+    filter(ovc_program == TRUE) %>%
+    group_by(fundingagency, operatingunit, countryname,
+             primepartner, psnu, psnuuid) %>%
+    summarise(ovc_serv = sum(cumulative, na.rm = TRUE)) %>%
+    ungroup()
+
+  # TX PEDS
+  df_psnu %>%
+    filter(indicator == "TX_CURR") %>%
+    distinct(indicator, standardizeddisaggregate) %>%
+    prinf()
+
+  df_tx <- df_psnu %>%
+    filter(fiscal_year == 2020,
+           indicator == "TX_CURR",
+           standardizeddisaggregate == "Age/Sex/HIVStatus",
+           str_to_lower(fundingagency) != "dedup",
+           trendscoarse == "<15") %>%
+    mutate(clhiv = if_else(!is.na(cumulative), TRUE, FALSE)) %>%
+    filter(clhiv == TRUE) %>%
+    group_by(fundingagency, operatingunit, countryname,
+             primepartner, psnu, psnuuid) %>%
+    summarise(tx_curr = sum(cumulative, na.rm = TRUE)) %>%
+    ungroup()
 
 
-  ## OVC & TX Overlap
-  df_tx <- extract_ovc_tx_overlap(df_msd = df_psnu,
-                                      rep_fy = rep_fy + 1,
-                                      rep_agency = rep_agencies)
+  # PEDS OVC Coverage
+  df_ovc_cov <- df_tx %>%
+    full_join(df_ovc,
+              by = c("fundingagency", "operatingunit",
+                     "countryname", "primepartner", "psnu", "psnuuid"))
+
+
+  df_ou_ovc_cov <- df_ovc_cov %>%
+    group_by(operatingunit, countryname, psnu, psnuuid) %>%
+    summarise(across(c(tx_curr, ovc_serv), sum, na.rm = TRUE)) %>%
+    ungroup
+
+  spdf_ou_cov <- spdf_pepfar %>%
+    left_join(df_ou_ovc_cov, by = c("uid" = "psnuuid")) %>%
+    filter(!is.na(tx_curr))
+
+# VIZ ----
+
+  cntry <- "Nigeria"
+
+  spdf_nga <- spdf_ou_cov %>%
+    filter(countryname == cntry)
+
+  spdf_nga_tx <- spdf_nga %>% filter(tx_curr > 0)
+  spdf_nga_tx_noovc <- spdf_nga %>% filter(tx_curr > 0, ovc_serv == 0)
+  spdf_nga_tx_noovc2 <- spdf_nga_tx_noovc %>%
+    summarise() %>%
+    st_geometry() %>%
+    st_sample(size = 100)
+  spdf_nga_ovc <- spdf_nga %>% filter(ovc_serv > 0)
+
+  # admin 0 and 1 for basemap
+  admin0 <- spdf_pepfar %>%
+    filter(operatingunit == cntry,
+           label == "country")
+
+  admin1 <- spdf_pepfar %>%
+    filter(operatingunit == cntry,
+           label == "snu1")
+
+  admin0 %>% gview()
+
+  # Produce basemap
+  basemap <- terrain_map(countries = admin0,
+                         adm0 = admin0,
+                         adm1 = admin1,
+                         mask = TRUE,
+                         terr = terr)
+
+  # Produce thematic map
+  map <- basemap +
+    geom_sf(data = spdf_nga_tx,
+            aes(fill = tx_curr),
+            color = grey10k,
+            lwd = .3,
+            alpha = .3) +
+    geom_sf(data = spdf_nga_tx_noovc2,
+            fill = usaid_darkgrey,
+            color = grey10k,
+            size = 3) +
+    # geom_sf(data = spdf_nga_ovc,
+    #         fill = scooter,
+    #         color = grey10k,
+    #         lwd = .3,
+    #         alpha = .8) +
+    scale_fill_si(discrete = F) +
+    si_style_map()
+
