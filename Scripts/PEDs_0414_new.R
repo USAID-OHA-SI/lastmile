@@ -45,9 +45,9 @@ peds_psnu <- list.files(path = si_path(type="path_msd"),
 # GEO DATA ------------------------------------------------------------
 
 gis_vc_sfc <- return_latest(
-    si_path(type="path_vector"),
+    si_path(type = "path_vector"),
     pattern = "Vc.*.shp$",
-    recursive = T, full.names = T) %>%
+    recursive = T) %>%
   set_names(basename(.) %>% str_remove(".shp")) %>%
   map(read_sf)
 
@@ -69,11 +69,13 @@ gis_vc_sfc <- list.files(
 #check panorama to check on like guatemala and other countries that don't have PEDS data
 
 cntry_peds <- peds_psnu %>%
+  rename(countryname = countrynamename) %>% # BK => You need this for the new files
   filter(fiscal_year == "2021",
          indicator == "TX_CURR",
          standardizeddisaggregate == "Age/Sex/HIVStatus",
         !fundingagency %in% c("Dedup"),
-        !primepartner %in% c("TBD")) %>%
+        #!primepartner %in% c("TBD")
+        ) %>%
   filter(!trendsfine %in% c("15-19","20-24","25-29",
                             "30-34","35-39","40-49","50+")) %>%
   glamr::clean_agency() %>%
@@ -84,16 +86,17 @@ cntry_peds <- peds_psnu %>%
   reshape_msd(clean = TRUE) %>%
   select(-period_type) %>%
   group_by(operatingunit) %>%
-  mutate(country_val = sum(val, na.rm = TRUE)) %>%
+  mutate(country_val = sum(value, na.rm = TRUE)) %>%
   ungroup() %>%
   group_by(operatingunit, primepartner, fundingagency) %>%
-  mutate(primepartner_val = sum(val, na.rm = TRUE)) %>%
+  mutate(primepartner_val = sum(value, na.rm = TRUE)) %>%
   ungroup() %>%
   group_by(operatingunit, snu1, snu1uid, #countryname,
            primepartner, fundingagency) %>%
-  summarise(val = sum(val, na.rm = TRUE),
+  summarise(val = sum(value, na.rm = TRUE),
             share = val / first(country_val),
-             primeshare = primepartner_val/first(country_val)) %>%
+            primeshare = primepartner_val/first(country_val),
+            country_val = first(country_val)) %>%
   ungroup() %>%
   mutate(primepartner = paste0(primepartner, " (", round(primeshare*100, 2),  "%",")"))
   #mutate(primepartner = paste0(fundingagency, "-",
@@ -107,12 +110,16 @@ cntry_peds <- peds_psnu %>%
 
 
 #counting mechs
-cntry_peds %>% filter(operatingunit == "Kenya", fundingagency == "CDC") %>% count(primepartner, mech_code, mech_name) %>% arrange(primepartner) %>% prinf()
+cntry_peds %>%
+  filter(operatingunit == "Kenya",
+         fundingagency == "CDC") %>%
+  count(primepartner, fundingagency) %>%
+  arrange(primepartner) %>%
+  prinf()
 
 
 #function 1
-map_share <- function(df_peds, ou
-                                  ) {
+map_share <- function(df_peds, ou) {
 
   print(ou)
 
@@ -120,9 +127,19 @@ map_share <- function(df_peds, ou
     filter(operatingunit == ou,
            fundingagency %in% c("USAID"))
 
+  df_cntry1m <- df_cntry1 %>%
+    group_by(snu1uid, snu1) %>%
+    summarise(share = sum(val, rm.na = TRUE) / first(country_val)) %>%
+    ungroup()
+
   df_cntry2 <- df_peds %>%
     filter(operatingunit == ou,
            fundingagency %in% c("CDC"))
+
+  df_cntry2m <- df_cntry2 %>%
+    group_by(snu1uid, snu1) %>%
+    summarise(share = sum(val, rm.na = TRUE) / first(country_val)) %>%
+    ungroup()
 
   ou <-  ifelse(ou == "Cote d'Ivoire", "Ivory Coast",
                 ifelse(ou == "Eswatini", "Swaziland",
@@ -131,11 +148,11 @@ map_share <- function(df_peds, ou
                                      ifelse(ou == "South Sudan", "Sudan", ou)))))
 
   peds_geo <- st_as_sf(gis_vc_sfc$VcPepfarPolygons) %>%
-    left_join(df_cntry1, by = c("uid" = "snu1uid")) %>%
+    left_join(df_cntry1m, by = c("uid" = "snu1uid")) %>%
     dplyr::filter(!is.na(share)) # BK => This will remove rows with no mer data
 
   peds_geo2 <- st_as_sf(gis_vc_sfc$VcPepfarPolygons) %>%
-    left_join(df_cntry2, by = c("uid" = "snu1uid")) %>%
+    left_join(df_cntry2m, by = c("uid" = "snu1uid")) %>%
     dplyr::filter(!is.na(share))
 
   basemap <- terrain_map(countries = ou,
@@ -146,11 +163,24 @@ map_share <- function(df_peds, ou
 
   map1 <- basemap +
     geom_sf(data = peds_geo,
-            fill = usaid_red, lwd = .2, color = grey10k, stroke = 1.5, alpha = 0.5) +
+            fill = usaid_red,
+            #aes(fill = share),
+            lwd = .2,
+            color = grey10k,
+            stroke = 1.5, alpha = 0.5,
+            show.legend = F) +
+    geom_sf_text(data = peds_geo, aes(label = percent(share, 1))) +
+    geom_sf_text(data = peds_geo2, aes(label = percent(share, 1))) +
     geom_sf(data = peds_geo2,
-            fill = usaid_blue, lwd = .2, color = grey10k, stroke = 1.5, alpha = 0.35) +
+            fill = usaid_blue,
+            #aes(fill = share),
+            lwd = .2,
+            color = grey10k,
+            stroke = 1.5,
+            alpha = 0.35) +
     geom_sf(data = cntry_adm1, fill = NA, lwd = .2, color = grey30k) +
-    scale_colour_identity()+
+    #scale_colour_identity()+
+    #scale_fill_si(palette = "old_roses", discrete = F) +
     si_style_map() +
     theme(
       legend.position =  "bottom",
@@ -160,45 +190,62 @@ map_share <- function(df_peds, ou
    # ggtitle(paste0(ou, " | % of the FY21 PEDS TX_CURR Targets by IP and SNU1"))
     #theme(plot.title = element_text(size = 14, family = "Source Sans Pro", face=1))
 
+  # map2 <- basemap +
+  #   geom_sf(data = peds_geo2,
+  #           #fill = usaid_red,
+  #           aes(fill = share),
+  #           lwd = .2,
+  #           color = grey10k,
+  #           stroke = 1.5, alpha = 0.5,
+  #           show.legend = F) +
+  #   geom_sf_text(data = peds_geo2, aes(label = percent(share, 1))) +
+  #   geom_sf(data = cntry_adm1, fill = NA, lwd = .2, color = grey30k) +
+  #   scale_fill_si(palette = "scooters", discrete = F) +
+  #   si_style_map()
 
   print(map1)
 
 
-  bar_usaid <- peds_geo %>%
-    ggplot(aes(x=reorder(primepartner,desc(-share)),
-               y=share, fill=share)) + #+ filter(!is.na(share)) +
-    geom_col(show.legend = F)+
+
+  bar_usaid <- df_cntry1 %>%
+    ggplot(aes(x=reorder(primepartner, desc(-primeshare)),
+               y=share)) + #+ filter(!is.na(share)) +
+    geom_col(fill = usaid_red, alpha = 0.35, show.legend = F)+
     coord_flip()+
-    scale_y_continuous(labels = percent)+
-    scale_fill_si(palette = "old_roses", discrete=FALSE, alpha=0.9, reverse = FALSE,
-                  breaks = c(0,0.25,0.5),
-                  limits = c(0,0.50),
-                  labels=percent)+
+    #scale_y_continuous(labels = percent)+
+    # scale_fill_si(palette = "old_roses", discrete=FALSE, alpha=0.9, reverse = FALSE,
+    #               breaks = c(0,0.25,0.5),
+    #               limits = c(0,0.50),
+    #               labels=percent)+
     si_style_nolines()+
     labs(y="",
-         x="",
-         title='% Share by Implementing Partner | USAID',
-         caption="MSD March 2021")+
-    theme(axis.text.y = element_text(size=8, face = "bold"))
+         x=""
+         #title='USAID Partners'
+         #caption="MSD March 2021"
+         )+
+    theme(axis.text.y = element_text(size=8, face = "bold"),
+          axis.text.x = element_blank())
 
 
 
-  bar_cdc <- peds_geo2 %>%
-    ggplot(aes(x=reorder(primepartner,desc(-share)),
-               y=share, fill=share)) + #+ filter(!is.na(share)) +
-    geom_col(show.legend = F)+
+  bar_cdc <- df_cntry2 %>%
+    ggplot(aes(x=reorder(primepartner, desc(-primeshare)),
+               y=share)) + #+ filter(!is.na(share)) +
+    geom_col(fill = usaid_blue, alpha = 0.35, show.legend = F)+
     coord_flip()+
-    scale_y_continuous(labels = percent)+
-    scale_fill_si(palette = "denims", discrete=FALSE, alpha=0.9, reverse = FALSE,
-                  breaks = c(0,0.25,0.5),
-                  limits = c(0,0.50),
-                  labels=percent)+
+    #scale_y_continuous(labels = percent)+
+    # scale_fill_si(palette = "denims", discrete=FALSE, alpha=0.9, reverse = FALSE,
+    #               breaks = c(0,0.25,0.5),
+    #               limits = c(0,0.50),
+    #               labels=percent)+
     si_style_nolines()+
     labs(y="",
-         x="",
-         title='% Share by Implementing Partner | CDC',
-         caption="MSD March 2021")+
-    theme(axis.text.y = element_text(size=8, face = "bold"))
+         x=""
+         #title='CDC Partners'
+         #caption="MSD March 2021"
+         )+
+    theme(axis.text.y = element_text(size=8, face = "bold"),
+          axis.text.x = element_blank())
 
 
 
@@ -206,9 +253,12 @@ map_share <- function(df_peds, ou
     plot_layout(ncol = 2, widths = c(1, 1),
                 guides = 'collect') +
     plot_annotation(
-      title = (paste0(ou, " | % Share of the FY21 PEDS TX_CURR Targets by IP and SNU1")),
+      title = (paste0(ou, " | FY21 PEDS TX_CURR Targets")),
+      subtitle = "% Share by Agency, SNU1 & Prime Partner, USAID in Red",
       caption = paste0("OHA/SIEI - MSD", Sys.Date()),
-      theme = theme(plot.title = element_text(hjust = .5, size = 14, face = "bold"), legend.position = 'bottom')
+      theme = theme(plot.title = element_text(hjust = .5, size = 14, face = "bold"),
+                    plot.subtitle = element_text(hjust = .5, size = 12, face = "bold"),
+                    legend.position = 'bottom')
     )
   print(test)
 
@@ -238,9 +288,7 @@ map1 <- cntry_peds %>%
   distinct(operatingunit) %>%
   pull() %>%
   nth(25) %>%
-  map(.x, .f = ~map_share(df_peds = cntry_peds,
-                          ou = .x),
-                          fundingagency %in% c("CDC" & "USAID"))
+  map(.x, .f = ~map_share(df_peds = cntry_peds, ou = .x))
 
 
 
@@ -485,6 +533,10 @@ bar_cdc <- peds_geo2 %>%
        title='% Share by Implementing Partner | CDC',
        caption="MSD March 2021")+
   theme(axis.text.y = element_text(size=8, face = "bold"))
+
+
+
+
 
 
 
