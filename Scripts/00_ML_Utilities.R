@@ -108,7 +108,7 @@ extract_tx_plp <-
     ous <- {{lst_ous}}
 
     if (pd == 1) {
-      cat(Wavelength::paint_red("This may not be appropriate for QTR1"))
+      cat(Wavelength::paint_red("\nThis may not be appropriate for QTR1\n"))
       stop("Error - Invalid Reporting Period")
     }
 
@@ -199,7 +199,7 @@ tx_graph <-
     country <- {{cntry}}
 
     df_geo2 <- df_geo %>%
-      filter(countryname == country, type == "PSNU") %>%
+      filter(countryname == country) %>%
       left_join(df, by = c("uid" = "psnuuid")) %>%
       filter(!is.na({{mapvar}})) %>%
       mutate(
@@ -225,7 +225,16 @@ tx_graph <-
       coord_flip() +
       scale_x_reordered() +
       #scale_fill_identity() +
-      scale_fill_viridis_c(option = "viridis", direction = -1) +
+      #scale_fill_viridis_c(option = "viridis", direction = -1) +
+      scale_fill_si(
+        palette = "genoas",
+        discrete = FALSE,
+        alpha = 0.9,
+        na.value = grey40k,
+        breaks = c(0, .25, .50, .75, 1.00),
+        limits = c(0, 1),
+        labels = percent
+      )
       scale_y_continuous(labels = percent_format(accuracy = 1)) +
       si_style_xgrid() +
       labs(x = NULL, y = NULL) +

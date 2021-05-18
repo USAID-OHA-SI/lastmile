@@ -1,5 +1,7 @@
 #Mamedina
-#01122021 - DRAFT PEDs Maps
+#05172021 - DRAFT PEDs Maps
+
+#New Requests
 
 #MAp 1 a map showing IPs by SNU by country
 #what % of the FY21 peds TX_CURR targets each IP has
@@ -64,12 +66,11 @@ gis_vc_sfc <- list.files(
 
 
 # Global dataset
-#double check to make sure there is no duplicate data
 #MAY need to update with Q2
 #check panorama to check on like guatemala and other countries that don't have PEDS data
 
 cntry_peds <- peds_psnu %>%
-  rename(countryname = countryname) %>% # BK => You need this for the new files
+  #rename(countryname = countryname) %>%
   filter(fiscal_year == "2021",
          indicator == "TX_CURR",
          standardizeddisaggregate == "Age/Sex/HIVStatus",
@@ -91,7 +92,7 @@ cntry_peds <- peds_psnu %>%
   group_by(operatingunit, primepartner, fundingagency) %>%
   mutate(primepartner_val = sum(val, na.rm = TRUE)) %>%
   ungroup() %>%
-  group_by(operatingunit, snu1, snu1uid, #countryname,
+  group_by(operatingunit, snu1, snu1uid, countryname,
            primepartner, fundingagency) %>%
   summarise(val = sum(val, na.rm = TRUE),
             share = val / first(country_val),
@@ -120,7 +121,9 @@ cntry_peds %>%
 
 
 
-#function 1
+#function 1 - #removed % labels for CDC
+#I need to be able to wrap primepartner text on bar charts to reduce the size on page
+#they potentially want to take out CDC bar chart which may free up space
 map_share <- function(df_peds, ou) {
 
   print(ou)
@@ -172,7 +175,7 @@ map_share <- function(df_peds, ou) {
             stroke = 1.5, alpha = 0.5,
             show.legend = F) +
     geom_sf_text(data = peds_geo, aes(label = percent(share, 1))) +
-    geom_sf_text(data = peds_geo2, aes(label = percent(share, 1))) +
+    geom_sf_text(data = peds_geo2, aes(label = "")) +
     geom_sf(data = peds_geo2,
             fill = usaid_blue,
             #aes(fill = share),
@@ -258,7 +261,7 @@ map_share <- function(df_peds, ou) {
     plot_annotation(
       title = (paste0(ou, " | FY21 PEDS TX_CURR Targets")),
       subtitle = "% Share by Agency, SNU1 & Prime Partner, USAID in Red, CDC in Blue",
-      caption = paste0("OHA/SIEI - MSD", Sys.Date()),
+      caption = paste0("OHA/SIEI - MSD", Sys.Date(), "\nDenominator represents Total # Peds FY21 Targets"),
       theme = theme(plot.title = element_text(hjust = .5, size = 14, face = "bold"),
                     plot.subtitle = element_text(hjust = .5, size = 12, face = "bold"),
                     legend.position = 'bottom')
@@ -290,13 +293,13 @@ map1 <- cntry_peds %>%
          !is.na(share)) %>%
   distinct(operatingunit) %>%
   pull() %>%
-  nth(20) %>%
+  nth(11) %>%
   map(.x, .f = ~map_share(df_peds = cntry_peds, ou = .x))
 
 
 
 
-ggsave(here("~/Github/training/Graphics/map1_peds", "MAP1_Tanzania_ex2_TX_CURR by IP.png"),
+ggsave(here("~/Github/training/Graphics/map1_peds", "MAP1_kenya_ex3_TX_CURR by IP.png"),
        scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
 
 #write.csv(cntry_peds,"C:\\Users\\STAR\\Documents\\Github\\peds_txcurr.csv", row.names = FALSE)
