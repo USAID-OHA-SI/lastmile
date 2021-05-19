@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 #Mamedina
 #01122021 - DRAFT PEDs Maps
 
@@ -1216,4 +1215,3 @@ ggsave(here("~/Github/training/Graphics/map2_peds", "MAP2_Kenya_CDC_TX_CURR TARG
 
 
 
->>>>>>> b2930e33c905c692e31806038096608138c87d23
