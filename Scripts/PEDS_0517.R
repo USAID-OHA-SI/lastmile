@@ -39,6 +39,12 @@ peds_psnu <- list.files(path = si_path(type = "path_msd"),
   last() %>%
   read_msd()
 
+peds_psnu %>%
+  filter(str_detect(primepartner, "TBD"),
+         operatingunit == "Kenya") %>%
+  distinct(fundingagency, primepartner, mech_code, mech_name) %>%
+  view()
+
 # GEO DATA ------------------------------------------------------------
 
 gis_vc_sfc <- return_latest(
@@ -48,12 +54,12 @@ gis_vc_sfc <- return_latest(
   set_names(basename(.) %>% str_remove(".shp")) %>%
   map(read_sf)
 
-# gis_vc_sfc <- list.files(
-#   si_path(type = "path_vector"),
-#   pattern = "Vc.*.shp$",
-#   recursive = T, full.names = T) %>%
-#   set_names(basename(.) %>% str_remove(".shp")) %>%
-#   map(read_sf)
+gis_vc_sfc <- list.files(
+  si_path(type = "path_vector"),
+  pattern = "Vc.*.shp$",
+  recursive = T, full.names = T) %>%
+  set_names(basename(.) %>% str_remove(".shp")) %>%
+  map(read_sf)
 
 
 
@@ -73,7 +79,7 @@ peds_psnu %>%
 
 # Summarise data
 cntry_peds <- peds_psnu %>%
-  rename(countryname = countrynamename) %>%
+  #rename(countryname = countrynamename) %>%
   filter(fiscal_year == "2021",
          indicator == "TX_CURR",
          standardizeddisaggregate == "Age/Sex/HIVStatus",
@@ -133,12 +139,15 @@ cntry_peds <- cntry_peds %>%
 
 
 #counting mechs
-cntry_peds %>%
-  filter(operatingunit == "Kenya",
-         fundingagency == "CDC") %>%
-  count(primepartner, fundingagency) %>%
-  arrange(primepartner) %>%
-  prinf()
+
+
+# cntry_peds %>%
+#   filter(primepartner == "TBD",
+#     operatingunit == "Kenya",
+#          fundingagency == "CDC") %>%
+#   count(primepartner, fundingagency) %>%
+#   arrange(primepartner) %>%
+#   prinf()
 
 
 
@@ -165,7 +174,7 @@ map_share <- function(df_peds, ou) {
   tx_curr_usaid = df_cntry1 %>%
     pull(agencyshare) %>%
     first() %>%
-    percent(1)
+    percent(.01)
 
   tx_curr_usaid2 = df_cntry1 %>%
     group_by(operatingunit, countryname) %>%
@@ -324,13 +333,13 @@ map1 <- cntry_peds %>%
   filter(!str_detect(operatingunit, " Region$"), !is.na(share)) %>%
   distinct(operatingunit) %>%
   pull() %>%
-  nth(10) %>%
+  nth(24) %>%
   map(.x, .f = ~map_share(df_peds = cntry_peds, ou = .x))
 
 
 
 
-ggsave(here("~/Github/training/Graphics/map1_peds", "MAP1_kenya_ex3_TX_CURR by IP.png"),
+ggsave(here("~/Github/training/Graphics/map1_peds", "MAP1_Zimbabwe_ex2_TX_CURR by IP.png"),
        scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
 
 #write.csv(cntry_peds,"C:\\Users\\STAR\\Documents\\Github\\peds_txcurr.csv", row.names = FALSE)
@@ -364,12 +373,12 @@ cntry_2_peds <- peds_psnu %>%
   filter(!trendsfine %in% c("15-19","20-24","25-29",
                             "30-34","35-39","40-49","50+")) %>%
   glamr::clean_agency() %>%
-  group_by(fiscal_year, operatingunit, snu1, countrynamename,
+  group_by(fiscal_year, operatingunit, snu1, countryname,
            snu1uid, primepartner, fundingagency) %>%
   summarise_at(vars(targets:cumulative),sum,na.rm=TRUE) %>%
   ungroup() %>%
   select(-c(qtr1:qtr4)) %>%
-  group_by(operatingunit, snu1, snu1uid, countrynamename,
+  group_by(operatingunit, snu1, snu1uid, countryname,
            primepartner, fundingagency) %>%
   mutate(APR = (cumulative/targets)) %>%
   ungroup() %>%
