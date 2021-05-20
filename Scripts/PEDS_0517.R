@@ -30,13 +30,9 @@ library(ggrepel)
 library(tidytext)
 library(glue)
 
-# MER Data
-
-load_secrets()
-
 # MER Site level import --------------------------------------------------------------------
 
-peds_psnu <- list.files(path = si_path(type="path_msd"),
+peds_psnu <- list.files(path = si_path(type = "path_msd"),
                         pattern = "Structured_.*_PSNU_IM.*_20210319_v2_1.zip",
                         full.names = TRUE) %>%
   sort() %>%
@@ -52,12 +48,12 @@ gis_vc_sfc <- return_latest(
   set_names(basename(.) %>% str_remove(".shp")) %>%
   map(read_sf)
 
-gis_vc_sfc <- list.files(
-  si_path(type="path_vector"),
-  pattern = "Vc.*.shp$",
-  recursive = T, full.names = T) %>%
-  set_names(basename(.) %>% str_remove(".shp")) %>%
-  map(read_sf)
+# gis_vc_sfc <- list.files(
+#   si_path(type = "path_vector"),
+#   pattern = "Vc.*.shp$",
+#   recursive = T, full.names = T) %>%
+#   set_names(basename(.) %>% str_remove(".shp")) %>%
+#   map(read_sf)
 
 
 
@@ -68,6 +64,14 @@ gis_vc_sfc <- list.files(
 #MAY need to update with Q2
 #check panorama to check on like guatemala and other countries that don't have PEDS data
 
+# Check
+peds_psnu %>%
+  filter(fiscal_year == 2021,
+         str_detect(primepartner, "TBD")) %>%
+  distinct(fundingagency, operatingunit, primepartner, mech_code, mech_name) %>%
+  prinf()
+
+# Summarise data
 cntry_peds <- peds_psnu %>%
   rename(countryname = countrynamename) %>%
   filter(fiscal_year == "2021",
@@ -79,6 +83,10 @@ cntry_peds <- peds_psnu %>%
   filter(!trendsfine %in% c("15-19","20-24","25-29",
                             "30-34","35-39","40-49","50+")) %>%
   clean_agency() %>%
+  mutate(primepartner = if_else(
+    str_detect(primepartner, "TBD"),
+    paste0(primepartner, " - ", mech_name),
+    primepartner)) %>%
   group_by(fiscal_year, fundingagency, operatingunit,
            countryname, snu1, snu1uid, primepartner) %>%
   summarise(across(starts_with("targ"), sum, na.rm = TRUE)) %>%
