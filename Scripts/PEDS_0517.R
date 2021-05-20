@@ -86,7 +86,8 @@ cntry_peds <- peds_psnu %>%
   mutate(primepartner = if_else(
     str_detect(primepartner, "TBD"),
     paste0(primepartner, " - ", mech_name),
-    primepartner)) %>%
+    primepartner)
+  ) %>%
   group_by(fiscal_year, fundingagency, operatingunit,
            countryname, snu1, snu1uid, primepartner) %>%
   summarise(across(starts_with("targ"), sum, na.rm = TRUE)) %>%
