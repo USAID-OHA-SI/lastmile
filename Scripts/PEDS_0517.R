@@ -6,8 +6,7 @@
 #MAp 1 a map showing IPs by SNU by country
 #what % of the FY21 peds TX_CURR targets each IP has
 
-#Map 2: a map showing IPs by SNU by country what % of the peds TX_CURR APR20 results to targets
-#each IP achieved (ie what % of targets were achieved) - from 0 - 100%?
+
 
 #THEY want single map with USAID red and CDC blue and overlapping areas - they want IP and % chart next to the map
 
@@ -354,13 +353,13 @@ map1 <- cntry_peds %>%
   filter(!str_detect(operatingunit, " Region$"), !is.na(share)) %>%
   distinct(operatingunit) %>%
   pull() %>%
-  nth(10) %>%
+  nth(24) %>%
   map(.x, .f = ~map_share(df_peds = cntry_peds, ou = .x))
 
 
 
 
-ggsave(here("~/Github/training/Graphics/map1_peds", "MAP1_Kenya_ex4_TX_CURR by IP.png"),
+ggsave(here("~/Github/training/Graphics/map1_peds", "MAP1_Zimbabwe_ex2_TX_CURR by IP.png"),
        scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
 
 #write.csv(cntry_peds,"C:\\Users\\STAR\\Documents\\Github\\peds_txcurr.csv", row.names = FALSE)
@@ -383,17 +382,24 @@ ggsave(here("~/Github/training/Graphics/map1_peds", "MAP1_Kenya_ex4_TX_CURR by I
 
 # ---------------- MAP 2 -----------------------------------
 
+#Map 2: a map showing IPs by SNU by country what % of the peds TX_CURR APR20 results to targets
+#each IP achieved (ie what % of targets were achieved) - from 0 - 100%?
+
 #Global Dataset for Map 2
 
 cntry_2_peds <- peds_psnu %>%
   filter(fiscal_year == "2020",
          indicator == "TX_CURR",
          standardizeddisaggregate == "Age/Sex/HIVStatus",
-         !fundingagency %in% c("Dedup"),
-         !primepartner %in% c("TBD")) %>%
+         !fundingagency %in% c("Dedup")) %>%
+         #!primepartner %in% c("TBD")) %>%
   filter(!trendsfine %in% c("15-19","20-24","25-29",
                             "30-34","35-39","40-49","50+")) %>%
   glamr::clean_agency() %>%
+  mutate(primepartner = if_else(
+    str_detect(primepartner, "TBD"),
+    paste0(primepartner, " - ", mech_name),
+    primepartner)) %>%
   group_by(fiscal_year, operatingunit, snu1, countryname,
            snu1uid, primepartner, fundingagency) %>%
   summarise_at(vars(targets:cumulative),sum,na.rm=TRUE) %>%
@@ -403,8 +409,12 @@ cntry_2_peds <- peds_psnu %>%
            primepartner, fundingagency) %>%
   mutate(APR = (cumulative/targets)) %>%
   ungroup() %>%
-  mutate(primepartner = paste0(#fundingagency, "-",
-    primepartner))
+  mutate(primepartner = paste0(primepartner, " (", round(APR*100, 2),  "%",")"),
+              primepartner = str_wrap(primepartner, width = 20))
+
+  #mutate(primepartner = paste0(primepartner))
+  #removed from above
+  #fundingagency, "-",
 
 #write.csv(cntry_2_peds,"C:\\Users\\STAR\\Documents\\Github\\peds_map2_txcurr.csv", row.names = FALSE)
 
@@ -449,13 +459,27 @@ map_apr <- function(df_apr, ou) {
                          mask = TRUE)
 
   cntry_adm1 <- gisr::get_admin1(ou)
+  cntry_adm0 <- gisr::get_admin0(ou)
 
 
   map2 <- basemap +
-    geom_sf(data = map2_geo, fill = usaid_red, lwd = .2, color = grey10k, stroke = 1.5, alpha = 0.5) +
+    geom_sf(data = map2_geo, fill = usaid_red,
+            lwd = .2,
+            color = grey30k,
+            stroke = 1.5,
+            alpha = 0.5,
+            show.legend = F) +
+    geom_sf_text(data = map2_geo, aes(label = APR, 0.01), size = 3) +
     geom_sf(data = map2_geo2,
-            fill = usaid_blue, lwd = .2, color = grey10k, stroke = 1.5, alpha = 0.35) +
+            fill = usaid_blue,
+            lwd = .2,
+            color = grey10k,
+            stroke = 1.5,
+            alpha = 0.35) +
     geom_sf(data = cntry_adm1, fill = NA, lwd = .2, color = grey30k) +
+    geom_sf(data = cntry_adm0, fill = NA, lwd = 2, color = "white") +
+    geom_sf(data = cntry_adm0, fill = NA, lwd = .8, color = grey90k) +
+    si_style_map() +
     scale_colour_identity() +
     si_style_map() +
     theme(
@@ -474,21 +498,23 @@ map_apr <- function(df_apr, ou) {
   bar_usaid_2 <-
     map2_geo %>%
     ggplot(aes(x=reorder(primepartner,desc(-APR)),
-               y=APR, fill=APR)) + #+ filter(!is.na(share)) +
-    geom_col(show.legend = F)+
-    coord_flip()+
-    scale_y_continuous(labels = percent) +
+               y=APR)) + #, fill=APR)) + #+ filter(!is.na(share)) +
+    geom_col(fill = usaid_red,
+             alpha = 0.55,
+             show.legend = F)+
+    coord_flip() +
+    #scale_y_continuous(labels = percent) +
     geom_vline(xintercept = 1,
                size = 1.2,
                color = "white") +
-    scale_fill_si(palette = "denims",
-                  discrete = TRUE,
-                  reverse = FALSE,
-                  label = percent) +
-    scale_x_continuous(labels = percent) +
+    # scale_fill_si(palette = "denims",
+    #               discrete = T,
+    #               reverse = FALSE,
+    #               label = percent) +
+    # scale_x_continuous(labels = percent) +
     labs(y="",
          x="",
-         title='% Achievement by Implementing Partner | USAID',
+         title='% Achievement by IP | USAID',
          caption="MSD March 2021") +
     si_style_xline() +
     theme(legend.position = "none")
@@ -499,20 +525,20 @@ map_apr <- function(df_apr, ou) {
   bar_cdc_2 <-
     map2_geo2 %>%
     ggplot(aes(x=reorder(primepartner,desc(-APR)),
-               y=APR, fill=APR)) + #+ filter(!is.na(share)) +
-    geom_col(show.legend = F)+
+               y=APR)) +  #, fill=APR)) + #+ filter(!is.na(share)) +
+    geom_col(fill = usaid_blue, alpha = 0.55, show.legend = F)+
     coord_flip()+
-    scale_y_continuous(labels = percent) +
+    #scale_y_continuous(labels = percent) +
     geom_vline(xintercept = 1,
                size = 1.5,
                color = "white") +
-    scale_fill_si(palette = "old_roses",
-                  discrete = TRUE,
-                  label = percent) +
-    si_style_nolines() +
+    # scale_fill_si(palette = "usaid_blue",
+    #               discrete = TRUE,
+    #               label = percent) +
+    # scale_x_continuous(labels = percent) +
     labs(y="",
          x="",
-         title='% Achievement by Implementing Partner | USAID',
+         title='% Achievement by IP | USAID',
          caption="MSD March 2021") +
     si_style_xline() +
     theme(legend.position = "none")
@@ -520,8 +546,9 @@ map_apr <- function(df_apr, ou) {
   print(bar_cdc_2)
 
 
-  map <- (map2 | (bar_usaid_2 / bar_cdc_2)) +
-    plot_layout(ncol = 2, widths = c(1, 1),
+  #map <- (map2 | (bar_usaid_2 / bar_cdc_2)) +
+  map <- (map2 | bar_usaid_2) +
+    plot_layout(ncol = 2, widths = c(2, 1),
                 guides = 'collect') +
     plot_annotation(
       title = (paste0(ou, " | % of TX_CURR FY20 Target Achievements by IP and SNU1")),
@@ -534,6 +561,7 @@ map_apr <- function(df_apr, ou) {
 
 
 }
+
 
 
 
@@ -551,7 +579,7 @@ cntry_2_peds %>%
                         ou = .x),
       fundingagency %in% c("CDC" & "USAID"))
 
-ggsave(here("~/Github/training/Graphics/map2_peds", "MAP2_Malawi_ex1 TX_CURR TARGETS by IP.png"),
+ggsave(here("~/Github/training/Graphics/map2_peds", "MAP2_Malawi_ex2 TX_CURR TARGETS by IP.png"),
        scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
 
 
