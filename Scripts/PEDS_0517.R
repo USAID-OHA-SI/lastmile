@@ -83,7 +83,7 @@ cntry_peds <- peds_psnu %>%
   filter(fiscal_year == "2021",
          indicator == "TX_CURR",
          standardizeddisaggregate == "Age/Sex/HIVStatus",
-         !fundingagency %in% c("Dedup"),
+         !fundingagency %in% c("Dedup")
          #!primepartner %in% c("TBD")
   ) %>%
   filter(!trendsfine %in% c("15-19","20-24","25-29",
@@ -204,13 +204,33 @@ map_share <- function(df_peds, ou) {
     select(agencyshare) %>%
     pull() %>%
     first() %>%
-    percent(1)
+    percent(.01)
 
   df_cntry2m <- df_cntry2 %>%
     group_by(snu1uid, snu1) %>%
     summarise(share = sum(value, rm.na = TRUE) / first(country_val)) %>%
     ungroup() %>%
     mutate(share = ifelse(share < 1, percent(share, .01), percent(share, 1)))
+
+  #adding in other for % to equal 100%
+
+  df_cntry3 <- df_peds %>%
+    filter(operatingunit == ou, !fundingagency %in% c("USAID","CDC"))
+
+  tx_curr_other = df_cntry3 %>%
+    select(agencyshare) %>%
+    pull() %>%
+    first() %>%
+    percent(.01)
+
+  df_cntry3m <- df_cntry3 %>%
+    group_by(snu1uid, snu1) %>%
+    summarise(share = sum(value, rm.na = TRUE) / first(country_val)) %>%
+    ungroup() %>%
+    mutate(share = ifelse(share < 1, percent(share, .01), percent(share, 1)))
+
+
+
 
   ou <-  ifelse(ou == "Cote d'Ivoire", "Ivory Coast",
                 ifelse(ou == "Eswatini", "Swaziland",
@@ -302,7 +322,7 @@ map_share <- function(df_peds, ou) {
                 guides = 'collect') +
     plot_annotation(
       title = (paste0(ou, " | FY21 PEDS TX_CURR Targets")),
-      subtitle = glue("% Share of targets by Agency, SNU1 & Prime Partner\nCountry target = {tx_curr} (<span style = 'color: #ba0c2f;'>USAID = {tx_curr_usaid}</span> and <span style = 'color: #002a6c;'>CDC = {tx_curr_cdc}</span>)"),
+      subtitle = glue("% Share of targets by Agency, SNU1 & Prime Partner\nCountry target = {tx_curr} (<span style = 'color: #ba0c2f;'>USAID = {tx_curr_usaid}</span> and <span style = 'color: #002a6c;'>CDC = {tx_curr_cdc}</span> and <span style = 'color: #212721;'>Other = {tx_curr_other}</span>)"),
       caption = paste0("OHA/SIEI - MSD FY21Q1c ", Sys.Date(), "\nDenominator = Total # Peds TX_CURR Targets"),
       theme = theme(plot.title = element_text(hjust = .5, size = 14, face = "bold"),
                     plot.subtitle = element_markdown(hjust = .5, size = 12, face = "bold"),
@@ -313,6 +333,7 @@ map_share <- function(df_peds, ou) {
 
   return(test)
 }
+
 
 
 #shp_world <- ne_countries(country=NULL, returnclass="sf")
@@ -333,13 +354,13 @@ map1 <- cntry_peds %>%
   filter(!str_detect(operatingunit, " Region$"), !is.na(share)) %>%
   distinct(operatingunit) %>%
   pull() %>%
-  nth(24) %>%
+  nth(10) %>%
   map(.x, .f = ~map_share(df_peds = cntry_peds, ou = .x))
 
 
 
 
-ggsave(here("~/Github/training/Graphics/map1_peds", "MAP1_Zimbabwe_ex2_TX_CURR by IP.png"),
+ggsave(here("~/Github/training/Graphics/map1_peds", "MAP1_Kenya_ex4_TX_CURR by IP.png"),
        scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
 
 #write.csv(cntry_peds,"C:\\Users\\STAR\\Documents\\Github\\peds_txcurr.csv", row.names = FALSE)
