@@ -6,8 +6,7 @@
 #MAp 1 a map showing IPs by SNU by country
 #what % of the FY21 peds TX_CURR targets each IP has
 
-#Map 2: a map showing IPs by SNU by country what % of the peds TX_CURR APR20 results to targets
-#each IP achieved (ie what % of targets were achieved) - from 0 - 100%?
+
 
 #THEY want single map with USAID red and CDC blue and overlapping areas - they want IP and % chart next to the map
 
@@ -39,6 +38,12 @@ peds_psnu <- list.files(path = si_path(type = "path_msd"),
   last() %>%
   read_msd()
 
+peds_psnu %>%
+  filter(str_detect(primepartner, "TBD"),
+         operatingunit == "Kenya") %>%
+  distinct(fundingagency, primepartner, mech_code, mech_name) %>%
+  view()
+
 # GEO DATA ------------------------------------------------------------
 
 gis_vc_sfc <- return_latest(
@@ -48,12 +53,12 @@ gis_vc_sfc <- return_latest(
   set_names(basename(.) %>% str_remove(".shp")) %>%
   map(read_sf)
 
-# gis_vc_sfc <- list.files(
-#   si_path(type = "path_vector"),
-#   pattern = "Vc.*.shp$",
-#   recursive = T, full.names = T) %>%
-#   set_names(basename(.) %>% str_remove(".shp")) %>%
-#   map(read_sf)
+gis_vc_sfc <- list.files(
+  si_path(type = "path_vector"),
+  pattern = "Vc.*.shp$",
+  recursive = T, full.names = T) %>%
+  set_names(basename(.) %>% str_remove(".shp")) %>%
+  map(read_sf)
 
 
 
@@ -73,11 +78,11 @@ peds_psnu %>%
 
 # Summarise data
 cntry_peds <- peds_psnu %>%
-  rename(countryname = countrynamename) %>%
+  #rename(countryname = countrynamename) %>%
   filter(fiscal_year == "2021",
          indicator == "TX_CURR",
          standardizeddisaggregate == "Age/Sex/HIVStatus",
-         !fundingagency %in% c("Dedup"),
+         !fundingagency %in% c("Dedup")
          #!primepartner %in% c("TBD")
   ) %>%
   filter(!trendsfine %in% c("15-19","20-24","25-29",
@@ -134,12 +139,15 @@ cntry_peds <- cntry_peds %>%
 
 
 #counting mechs
-cntry_peds %>%
-  filter(operatingunit == "Kenya",
-         fundingagency == "CDC") %>%
-  count(primepartner, fundingagency) %>%
-  arrange(primepartner) %>%
-  prinf()
+
+
+# cntry_peds %>%
+#   filter(primepartner == "TBD",
+#     operatingunit == "Kenya",
+#          fundingagency == "CDC") %>%
+#   count(primepartner, fundingagency) %>%
+#   arrange(primepartner) %>%
+#   prinf()
 
 
 
@@ -166,7 +174,7 @@ map_share <- function(df_peds, ou) {
   tx_curr_usaid = df_cntry1 %>%
     pull(agencyshare) %>%
     first() %>%
-    percent(1)
+    percent(.01)
 
   tx_curr_usaid2 = df_cntry1 %>%
     group_by(operatingunit, countryname) %>%
@@ -196,13 +204,33 @@ map_share <- function(df_peds, ou) {
     select(agencyshare) %>%
     pull() %>%
     first() %>%
-    percent(1)
+    percent(.01)
 
   df_cntry2m <- df_cntry2 %>%
     group_by(snu1uid, snu1) %>%
     summarise(share = sum(value, rm.na = TRUE) / first(country_val)) %>%
     ungroup() %>%
     mutate(share = ifelse(share < 1, percent(share, .01), percent(share, 1)))
+
+  #adding in other for % to equal 100%
+
+  df_cntry3 <- df_peds %>%
+    filter(operatingunit == ou, !fundingagency %in% c("USAID","CDC"))
+
+  tx_curr_other = df_cntry3 %>%
+    select(agencyshare) %>%
+    pull() %>%
+    first() %>%
+    percent(.01)
+
+  df_cntry3m <- df_cntry3 %>%
+    group_by(snu1uid, snu1) %>%
+    summarise(share = sum(value, rm.na = TRUE) / first(country_val)) %>%
+    ungroup() %>%
+    mutate(share = ifelse(share < 1, percent(share, .01), percent(share, 1)))
+
+
+
 
   ou <-  ifelse(ou == "Cote d'Ivoire", "Ivory Coast",
                 ifelse(ou == "Eswatini", "Swaziland",
@@ -294,7 +322,7 @@ map_share <- function(df_peds, ou) {
                 guides = 'collect') +
     plot_annotation(
       title = (paste0(ou, " | FY21 PEDS TX_CURR Targets")),
-      subtitle = glue("% Share of targets by Agency, SNU1 & Prime Partner\nCountry target = {tx_curr} (<span style = 'color: #ba0c2f;'>USAID = {tx_curr_usaid}</span> and <span style = 'color: #002a6c;'>CDC = {tx_curr_cdc}</span>)"),
+      subtitle = glue("% Share of targets by Agency, SNU1 & Prime Partner\nCountry target = {tx_curr} (<span style = 'color: #ba0c2f;'>USAID = {tx_curr_usaid}</span> and <span style = 'color: #002a6c;'>CDC = {tx_curr_cdc}</span> and <span style = 'color: #212721;'>Other = {tx_curr_other}</span>)"),
       caption = paste0("OHA/SIEI - MSD FY21Q1c ", Sys.Date(), "\nDenominator = Total # Peds TX_CURR Targets"),
       theme = theme(plot.title = element_text(hjust = .5, size = 14, face = "bold"),
                     plot.subtitle = element_markdown(hjust = .5, size = 12, face = "bold"),
@@ -305,6 +333,7 @@ map_share <- function(df_peds, ou) {
 
   return(test)
 }
+
 
 
 #shp_world <- ne_countries(country=NULL, returnclass="sf")
@@ -325,13 +354,13 @@ map1 <- cntry_peds %>%
   filter(!str_detect(operatingunit, " Region$"), !is.na(share)) %>%
   distinct(operatingunit) %>%
   pull() %>%
-  nth(10) %>%
+  nth(24) %>%
   map(.x, .f = ~map_share(df_peds = cntry_peds, ou = .x))
 
 
 
 
-ggsave(here("~/Github/training/Graphics/map1_peds", "MAP1_kenya_ex3_TX_CURR by IP.png"),
+ggsave(here("~/Github/training/Graphics/map1_peds", "MAP1_Zimbabwe_ex2_TX_CURR by IP.png"),
        scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
 
 #write.csv(cntry_peds,"C:\\Users\\STAR\\Documents\\Github\\peds_txcurr.csv", row.names = FALSE)
@@ -354,28 +383,40 @@ ggsave(here("~/Github/training/Graphics/map1_peds", "MAP1_kenya_ex3_TX_CURR by I
 
 # ---------------- MAP 2 -----------------------------------
 
+#Map 2: a map showing IPs by SNU by country what % of the peds TX_CURR APR20 results to targets
+#each IP achieved (ie what % of targets were achieved) - from 0 - 100%?
+
 #Global Dataset for Map 2
 
 cntry_2_peds <- peds_psnu %>%
   filter(fiscal_year == "2020",
          indicator == "TX_CURR",
          standardizeddisaggregate == "Age/Sex/HIVStatus",
-         !fundingagency %in% c("Dedup"),
-         !primepartner %in% c("TBD")) %>%
+         !fundingagency %in% c("Dedup")) %>%
+         #!primepartner %in% c("TBD")) %>%
   filter(!trendsfine %in% c("15-19","20-24","25-29",
                             "30-34","35-39","40-49","50+")) %>%
-  glamr::clean_agency() %>%
-  group_by(fiscal_year, operatingunit, snu1, countrynamename,
+  clean_agency() %>%
+  mutate(primepartner = if_else(
+    str_detect(primepartner, "TBD"),
+    paste0(primepartner, " - ", mech_name),
+    primepartner)) %>%
+  group_by(fiscal_year, operatingunit, snu1, countryname,
            snu1uid, primepartner, fundingagency) %>%
   summarise_at(vars(targets:cumulative),sum,na.rm=TRUE) %>%
   ungroup() %>%
   select(-c(qtr1:qtr4)) %>%
-  group_by(operatingunit, snu1, snu1uid, countrynamename,
+  group_by(operatingunit, snu1, snu1uid, countryname,
            primepartner, fundingagency) %>%
   mutate(APR = (cumulative/targets)) %>%
   ungroup() %>%
-  mutate(primepartner = paste0(#fundingagency, "-",
-    primepartner))
+  mutate(
+    primepartner = paste0(primepartner, " (", round(APR*100, 2), "%",")"),
+              primepartner = str_wrap(primepartner, width = 20))
+
+  #mutate(primepartner = paste0(primepartner))
+  #removed from above
+  #fundingagency, "-",
 
 #write.csv(cntry_2_peds,"C:\\Users\\STAR\\Documents\\Github\\peds_map2_txcurr.csv", row.names = FALSE)
 
@@ -386,19 +427,39 @@ cntry_2_peds <- peds_psnu %>%
 
 #-----COMBINED--------------------
 
-
-
 map_apr <- function(df_apr, ou) {
 
   print(ou)
+
+  # USAID
 
   df_cntry_1 <- df_apr %>%
     filter(operatingunit == ou,
            fundingagency %in% c("USAID"))
 
+  df_cntry_1m <- df_cntry_1 %>%
+    group_by(snu1uid, snu1) %>%
+    mutate(APR = (cumulative/targets)) %>%
+    ungroup() %>%
+    mutate(APR = case_when(
+      APR < 0.01 ~ percent(APR, .01),
+      TRUE ~ percent(APR, 1)
+    )
+    )
+
+  #CDC
+
   df_cntry_2 <- df_apr %>%
     filter(operatingunit == ou,
            fundingagency %in% c("CDC"))
+
+
+  df_cntry_2m <- df_cntry_2 %>%
+  group_by(snu1uid, snu1) %>%
+    mutate(APR = (cumulative/targets)) %>%
+  ungroup() %>%
+  mutate(APR = ifelse(APR < 1, percent(APR, .01), percent(APR, 1)))
+
 
 
   ou <-  ifelse(ou == "Cote d'Ivoire", "Ivory Coast",
@@ -408,11 +469,11 @@ map_apr <- function(df_apr, ou) {
                                      ifelse(ou == "South Sudan", "Sudan", ou)))))
 
   map2_geo <- st_as_sf(gis_vc_sfc$VcPepfarPolygons) %>%
-    left_join(df_cntry_1, by = c("uid" = "snu1uid")) %>%
+    left_join(df_cntry_1m, by = c("uid" = "snu1uid")) %>%
     dplyr::filter(!is.na(APR))
 
   map2_geo2 <- st_as_sf(gis_vc_sfc$VcPepfarPolygons) %>%
-    left_join(df_cntry_2, by = c("uid" = "snu1uid")) %>%
+    left_join(df_cntry_2m, by = c("uid" = "snu1uid")) %>%
     dplyr::filter(!is.na(APR))
 
   basemap <- terrain_map(countries = ou,
@@ -420,13 +481,27 @@ map_apr <- function(df_apr, ou) {
                          mask = TRUE)
 
   cntry_adm1 <- gisr::get_admin1(ou)
+  cntry_adm0 <- gisr::get_admin0(ou)
 
 
   map2 <- basemap +
-    geom_sf(data = map2_geo, fill = usaid_red, lwd = .2, color = grey10k, stroke = 1.5, alpha = 0.5) +
+    geom_sf(data = map2_geo, fill = usaid_red,
+            lwd = .2,
+            color = grey30k,
+            stroke = 1.5,
+            alpha = 0.5,
+            show.legend = F) +
+    geom_sf_text(data = map2_geo, aes(label = APR, 0.01), size = 3) +
     geom_sf(data = map2_geo2,
-            fill = usaid_blue, lwd = .2, color = grey10k, stroke = 1.5, alpha = 0.35) +
+            fill = usaid_blue,
+            lwd = .2,
+            color = grey10k,
+            stroke = 1.5,
+            alpha = 0.35) +
     geom_sf(data = cntry_adm1, fill = NA, lwd = .2, color = grey30k) +
+    geom_sf(data = cntry_adm0, fill = NA, lwd = 2, color = "white") +
+    geom_sf(data = cntry_adm0, fill = NA, lwd = .8, color = grey90k) +
+    si_style_map() +
     scale_colour_identity() +
     si_style_map() +
     theme(
@@ -444,55 +519,61 @@ map_apr <- function(df_apr, ou) {
 
   bar_usaid_2 <-
     map2_geo %>%
-    ggplot(aes(x=reorder(primepartner,desc(-APR)),
-               y=APR, fill=APR)) + #+ filter(!is.na(share)) +
-    geom_col(show.legend = F)+
-    coord_flip()+
-    scale_y_continuous(labels = percent) +
-    geom_vline(xintercept = 1,
-               size = 1.2,
-               color = "white") +
-    scale_fill_si(palette = "denims",
-                  discrete = TRUE,
-                  reverse = FALSE,
-                  label = percent) +
-    scale_x_continuous(labels = percent) +
+    ggplot(aes(x=reorder(primepartner, rev(APR)),
+               y=APR)) + #, fill=APR)) + #+ filter(!is.na(share)) +
+    geom_col(fill = usaid_red,
+             alpha = 0.55,
+             show.legend = F)+
+    coord_flip() +
+    si_style_nolines() +
+    #scale_y_continuous(labels = percent) +
+    # geom_vline(xintercept = 1,
+    #            size = 1.2,
+    #            color = "white") +
+    # scale_fill_si(palette = "denims",
+    #               discrete = T,
+    #               reverse = FALSE,
+    #               label = percent) +
+    # scale_x_continuous(labels = percent) +
     labs(y="",
          x="",
-         title='% Achievement by Implementing Partner | USAID',
+         title='% Achievement by IP | USAID',
          caption="MSD March 2021") +
-    si_style_xline() +
-    theme(legend.position = "none")
+    theme(legend.position = "none",
+          axis.text.x = element_blank())
 
 
   print(bar_usaid_2)
-
+#i need to rev(APR) desc(-APR)  which I converted to character I guesS?
+  #will look over it in the AM
   bar_cdc_2 <-
     map2_geo2 %>%
-    ggplot(aes(x=reorder(primepartner,desc(-APR)),
-               y=APR, fill=APR)) + #+ filter(!is.na(share)) +
-    geom_col(show.legend = F)+
+    ggplot(aes(x=reorder(primepartner, rev(APR)),
+               y=APR)) +  #, fill=APR)) + #+ filter(!is.na(share)) +
+    geom_col(fill = usaid_blue, alpha = 0.55, show.legend = F)+
     coord_flip()+
-    scale_y_continuous(labels = percent) +
-    geom_vline(xintercept = 1,
-               size = 1.5,
-               color = "white") +
-    scale_fill_si(palette = "old_roses",
-                  discrete = TRUE,
-                  label = percent) +
     si_style_nolines() +
+    #scale_y_continuous(labels = percent) +
+    # geom_vline(xintercept = 1,
+    #            size = 1.5,
+    #            color = "white") +
+    # scale_fill_si(palette = "usaid_blue",
+    #               discrete = TRUE,
+    #               label = percent) +
+    # scale_x_continuous(labels = percent) +
     labs(y="",
          x="",
-         title='% Achievement by Implementing Partner | USAID',
+         title='% Achievement by IP | USAID',
          caption="MSD March 2021") +
-    si_style_xline() +
-    theme(legend.position = "none")
+    # si_style_xline() +
+    theme(legend.position = "none", axis.text.x = element_blank())
 
   print(bar_cdc_2)
 
 
-  map <- (map2 | (bar_usaid_2 / bar_cdc_2)) +
-    plot_layout(ncol = 2, widths = c(1, 1),
+  #map <- (map2 | (bar_usaid_2 / bar_cdc_2)) +
+  map <- (map2 | bar_usaid_2) +
+    plot_layout(ncol = 2, widths = c(2, 1),
                 guides = 'collect') +
     plot_annotation(
       title = (paste0(ou, " | % of TX_CURR FY20 Target Achievements by IP and SNU1")),
@@ -505,6 +586,7 @@ map_apr <- function(df_apr, ou) {
 
 
 }
+
 
 
 
@@ -522,7 +604,7 @@ cntry_2_peds %>%
                         ou = .x),
       fundingagency %in% c("CDC" & "USAID"))
 
-ggsave(here("~/Github/training/Graphics/map2_peds", "MAP2_Malawi_ex1 TX_CURR TARGETS by IP.png"),
+ggsave(here("~/Github/training/Graphics/map2_peds", "MAP2_Malawi_ex2 TX_CURR TARGETS by IP.png"),
        scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
 
 
