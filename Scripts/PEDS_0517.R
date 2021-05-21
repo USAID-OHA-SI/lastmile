@@ -395,7 +395,7 @@ cntry_2_peds <- peds_psnu %>%
          #!primepartner %in% c("TBD")) %>%
   filter(!trendsfine %in% c("15-19","20-24","25-29",
                             "30-34","35-39","40-49","50+")) %>%
-  glamr::clean_agency() %>%
+  clean_agency() %>%
   mutate(primepartner = if_else(
     str_detect(primepartner, "TBD"),
     paste0(primepartner, " - ", mech_name),
@@ -409,7 +409,8 @@ cntry_2_peds <- peds_psnu %>%
            primepartner, fundingagency) %>%
   mutate(APR = (cumulative/targets)) %>%
   ungroup() %>%
-  mutate(primepartner = paste0(primepartner, " (", round(APR*100, 2),  "%",")"),
+  mutate(
+    primepartner = paste0(primepartner, " (", round(APR*100, 2), "%",")"),
               primepartner = str_wrap(primepartner, width = 20))
 
   #mutate(primepartner = paste0(primepartner))
@@ -425,19 +426,39 @@ cntry_2_peds <- peds_psnu %>%
 
 #-----COMBINED--------------------
 
-
-
 map_apr <- function(df_apr, ou) {
 
   print(ou)
+
+  # USAID
 
   df_cntry_1 <- df_apr %>%
     filter(operatingunit == ou,
            fundingagency %in% c("USAID"))
 
+  df_cntry_1m <- df_cntry_1 %>%
+    group_by(snu1uid, snu1) %>%
+    mutate(APR = (cumulative/targets)) %>%
+    ungroup() %>%
+    mutate(APR = case_when(
+      APR < 0.01 ~ percent(APR, .01),
+      TRUE ~ percent(APR, 1)
+    )
+    )
+
+  #CDC
+
   df_cntry_2 <- df_apr %>%
     filter(operatingunit == ou,
            fundingagency %in% c("CDC"))
+
+
+  df_cntry_2m <- df_cntry_2 %>%
+  group_by(snu1uid, snu1) %>%
+    mutate(APR = (cumulative/targets)) %>%
+  ungroup() %>%
+  mutate(APR = ifelse(APR < 1, percent(APR, .01), percent(APR, 1)))
+
 
 
   ou <-  ifelse(ou == "Cote d'Ivoire", "Ivory Coast",
@@ -447,11 +468,11 @@ map_apr <- function(df_apr, ou) {
                                      ifelse(ou == "South Sudan", "Sudan", ou)))))
 
   map2_geo <- st_as_sf(gis_vc_sfc$VcPepfarPolygons) %>%
-    left_join(df_cntry_1, by = c("uid" = "snu1uid")) %>%
+    left_join(df_cntry_1m, by = c("uid" = "snu1uid")) %>%
     dplyr::filter(!is.na(APR))
 
   map2_geo2 <- st_as_sf(gis_vc_sfc$VcPepfarPolygons) %>%
-    left_join(df_cntry_2, by = c("uid" = "snu1uid")) %>%
+    left_join(df_cntry_2m, by = c("uid" = "snu1uid")) %>%
     dplyr::filter(!is.na(APR))
 
   basemap <- terrain_map(countries = ou,
@@ -497,16 +518,17 @@ map_apr <- function(df_apr, ou) {
 
   bar_usaid_2 <-
     map2_geo %>%
-    ggplot(aes(x=reorder(primepartner,desc(-APR)),
+    ggplot(aes(x=reorder(primepartner, rev(APR)),
                y=APR)) + #, fill=APR)) + #+ filter(!is.na(share)) +
     geom_col(fill = usaid_red,
              alpha = 0.55,
              show.legend = F)+
     coord_flip() +
+    si_style_nolines() +
     #scale_y_continuous(labels = percent) +
-    geom_vline(xintercept = 1,
-               size = 1.2,
-               color = "white") +
+    # geom_vline(xintercept = 1,
+    #            size = 1.2,
+    #            color = "white") +
     # scale_fill_si(palette = "denims",
     #               discrete = T,
     #               reverse = FALSE,
@@ -516,22 +538,24 @@ map_apr <- function(df_apr, ou) {
          x="",
          title='% Achievement by IP | USAID',
          caption="MSD March 2021") +
-    si_style_xline() +
-    theme(legend.position = "none")
+    theme(legend.position = "none",
+          axis.text.x = element_blank())
 
 
   print(bar_usaid_2)
-
+#i need to rev(APR) desc(-APR)  which I converted to character I guesS?
+  #will look over it in the AM
   bar_cdc_2 <-
     map2_geo2 %>%
-    ggplot(aes(x=reorder(primepartner,desc(-APR)),
+    ggplot(aes(x=reorder(primepartner, rev(APR)),
                y=APR)) +  #, fill=APR)) + #+ filter(!is.na(share)) +
     geom_col(fill = usaid_blue, alpha = 0.55, show.legend = F)+
     coord_flip()+
+    si_style_nolines() +
     #scale_y_continuous(labels = percent) +
-    geom_vline(xintercept = 1,
-               size = 1.5,
-               color = "white") +
+    # geom_vline(xintercept = 1,
+    #            size = 1.5,
+    #            color = "white") +
     # scale_fill_si(palette = "usaid_blue",
     #               discrete = TRUE,
     #               label = percent) +
@@ -540,8 +564,8 @@ map_apr <- function(df_apr, ou) {
          x="",
          title='% Achievement by IP | USAID',
          caption="MSD March 2021") +
-    si_style_xline() +
-    theme(legend.position = "none")
+    # si_style_xline() +
+    theme(legend.position = "none", axis.text.x = element_blank())
 
   print(bar_cdc_2)
 
