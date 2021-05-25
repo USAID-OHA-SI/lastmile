@@ -43,43 +43,44 @@
   ## Reporting Filters
   rep_agency <- c("USAID", "HHS/CDC")
 
-  rep_fy = c(2019, 2020)
+  rep_fy = c(2020, 2021)
 
-  rep_pd = "FY20Q4"
+  rep_pd = "FY21Q2"
 
-  caption = " - Data Source: FY20Q4i MSD, VLS = (TX_PVLS_N/TX_PVLS_D)
+  caption = " - Data Source: FY21Q2i MSD, VLS = (TX_PVLS_N/TX_PVLS_D)
     ARV Disp. adjusted for Months of Treatments based on pill count
     OHA/SIEI - Produced on "
 
   ## Q4 MER Data
-  psnu_im <- "^MER_.*_PSNU_IM_.*_20201113_v1_1.zip$"
+  psnu_im <- "^MER_.*_PSNU_IM_.*_20210514_v1_1.zip$"
 
   ## File path + name
-  file_psnu_im <- list.files(
-      path = dir_merdata,
-      pattern = psnu_im,
-      recursive = TRUE,
-      full.names = TRUE
-    ) %>%
-    sort() %>%
-    last()
+  file_psnu_im <- return_latest(
+    folderpath = dir_merdata,
+    pattern = psnu_im,
+    recursive = TRUE
+  )
 
 # DATA ---------------------------------------
 
   ## MSD PSNU x IM
-  df_psnu <- file_psnu_im %>%
-    read_msd()
+  df_psnu <- file_psnu_im %>% read_msd()
 
   ## Geodata
 
   ## Terrain Raster
-  #terr <- get_raster(terr_path = dir_terr)
+  terr <- get_raster(terr_path = dir_terr)
 
-  ## ORGs
-  spdf_pepfar <- build_spdf(
-    dir_geo = paste0(dir_geodata, "/VcPepfarPolygons_2020.07.24"),
-    df_psnu = df_psnu
-  )
+  ## GEO - PEPFAR Orgs boundaries
+  spdf_pepfar <- file_shp %>% sf::read_sf()
+
+  df_attrs <- gisr::get_ouuids() %>%
+    filter(!str_detect(operatingunit, " Region$")) %>%
+    pull(operatingunit) %>%
+    map_dfr(.x, .f = ~get_attributes(country = .x))
+
+  spdf_pepfar <- spdf_pepfar %>%
+    left_join(df_attrs, by = c("uid" = "id"))
 
   ## VLS & TLD
   df_vls_tld <- extract_vls_tld(df_msd = df_psnu,
@@ -113,11 +114,11 @@
 # VIZ -----------------
 
   # single country => DRC
-  cname <- vls_cntries %>% nth(5)
+  cname <- vls_cntries %>% nth(15)
 
   viz_vls_tld(df_vl = df_vls_tld,
               spdf = spdf_pepfar,
-              terr_path = dir_terr,
+              terr = terr,
               country = cname,
               caption = caption,
               save = FALSE)
@@ -133,7 +134,7 @@
   vls_cntries %>%
     map(.x, .f = ~ viz_vls_tld(df_vl = df_vls_tld,
                                spdf = spdf_pepfar,
-                               terr_path = dir_terr,
+                               terr = terr,
                                country = .x,
                                caption = caption,
                                save = TRUE))

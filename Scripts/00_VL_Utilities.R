@@ -277,8 +277,8 @@ extract_eid_viralload <-
 extract_vls_tld <-
   function(df_msd,
            rep_agency = c("USAID","HHS/CDC"),
-           rep_fy = c("2019","2020"),
-           rep_pd = "FY20Q2",
+           rep_fy = c("2020","2021"),
+           rep_pd = "FY21Q2",
            peds = FALSE,
            lst_ous = NULL) {
 
@@ -313,17 +313,17 @@ extract_vls_tld <-
       reshape_msd(clean = TRUE) %>%
       dplyr::select(-period_type) %>%
       mutate(
-        val = case_when(
+        value = case_when(
           str_detect(indicator,"180-count") ~ value*6,
           str_detect(indicator, "90-count") ~ value*3,
-          TRUE ~ val
+          TRUE ~ value
         ),
         indicator = case_when(
           indicator %in% c("TX_PVLS_D", "TX_PVLS", "TX_CURR") ~ indicator,
           str_detect(indicator, "TLD") ~ "TLD",
           TRUE ~ "other"
         )) %>%
-      spread(indicator, val) %>%
+      spread(indicator, value) %>%
       group_by(period, fundingagency, operatingunit, psnuuid, psnu) %>%
       summarise_at(vars(other:TX_PVLS_D), sum, na.rm = TRUE) %>%
       ungroup() %>%
@@ -993,13 +993,15 @@ map_vlc_eid <-
 #' @title VLS/TLD Maps + Scatter plot
 #'
 #' @param df_vl       DataFrame containing PSNUUID, VLS &TLD_MOT
+#' @param spdf        Spatial DataFrame
+#' @param terr        Raster dataset
 #' @param country     Operationgunit
 #' @param rep_agency  Plot only 1 agency (default is NULL for both agencies)
 #' @param caption     Plot caption
 #' @param save        Export plot
 #'
 viz_vls_tld <-
-  function(df_vl, spdf, terr_path,
+  function(df_vl, spdf, terr,
            country = NULL,
            rep_agency = NULL,
            caption = "",
@@ -1031,53 +1033,28 @@ viz_vls_tld <-
 
     # Country boundaries
     spdf_adm0 <- spdf %>%
-      filter(type == "OU", operatingunit == country)
+      filter(label == "country", operatingunit == country)
 
-    # PSNU Boundaries: NE does not have South Sudan's admin1 boundaries
-    spdf_adm1 <- NULL
-
-    if (country == "South Sudan") {
-      spdf_adm1 <- spdf %>%
-        filter(type == "PSNU", operatingunit == country)
-    }
+    # SNU1 boundaries
+    spdf_adm1 <- spdf %>%
+      filter(label == "snu1", operatingunit == country)
 
     # Country specific data joined to spatial data
     spdf_cntry <- spdf %>%
-      dplyr::select(-operatingunit) %>%
-      left_join(df_vl, by = c("uid" = "psnuuid"), keep = FALSE) %>%
-      filter(!is.na(operatingunit))
-
-    # Basemap
-
-    # Match NE Sovereignt names
-    cntry <- case_when(
-      cntry == "Cote d'Ivoire" ~ "Ivory Coast",
-      cntry == "Tanzania" ~ "United Republic of Tanzania",
-      cntry == "Eswatini" ~ "Swaziland",
-      TRUE ~ cntry
-    )
+      filter(operatingunit == country) %>%
+      left_join(df_vl, by = c("uid" = "psnuuid"))
 
     # Get basemap
-    basemap <- NULL
-
-    # Use PEPFAR Boudaries
-    if (!is.null(spdf_adm1)) {
-      basemap <- gisr::terrain_map(countries = cntry,
-                                   adm0 = spdf_adm0,
-                                   adm1 = spdf_adm1,
-                                   terr_path = terr_path,
-                                   mask = TRUE)
-    }
-    # Use NE Boundaries
-    else {
-      basemap <- gisr::terrain_map(countries = cntry,
-                                   terr_path = terr_path,
-                                   mask = TRUE)
-    }
+    basemap <- terrain_map(countries = lookup_country(cntry),
+                           adm0 = spdf_adm0,
+                           adm1 = spdf_adm1,
+                           mask = TRUE,
+                           terr = terr)
 
     # VLS Map
     map_vls <- basemap
 
+    # VLS Data
     spdf_vls = spdf_cntry %>% filter(!is.na(VLS))
 
     if (nrow(spdf_vls) > 0) {
@@ -1086,12 +1063,12 @@ viz_vls_tld <-
         geom_sf(data = spdf_vls,
                 aes(fill = VLS), lwd = .2, color = grey10k) +
         geom_sf(data = spdf_adm0, fill = NA, lwd = .2, color = grey30k) +
-        scale_fill_viridis_c(option = "viridis",
-                             alpha = 0.7,
-                             direction = -1,
-                             breaks = rev(seq(1, lmin, -.25)),
-                             limits = c(lmin, 1),
-                             labels = percent) +
+        scale_fill_si(palette = "genoas",
+                      discrete = FALSE,
+                      alpha = 0.7,
+                      breaks = rev(seq(1, lmin, -.25)),
+                      limits = c(lmin, 1),
+                      labels = percent) +
         facet_wrap(~fundingagency, nrow = 2) +
         ggtitle("Viral Load Suppression") +
         si_style_map() +
@@ -1108,6 +1085,7 @@ viz_vls_tld <-
     # TLD Map
     map_tld_mot <- basemap
 
+    # TLD Data
     spdf_tld <- spdf_cntry %>% filter(!is.na(TLD_MOT))
 
     if (nrow(spdf_tld) > 0) {
@@ -1116,12 +1094,12 @@ viz_vls_tld <-
         geom_sf(data = spdf_tld,
                 aes(fill = TLD_MOT), lwd = .2, color = grey10k) +
         geom_sf(data = spdf_adm0, fill = NA, lwd = .2, color = grey30k) +
-        scale_fill_viridis_c(option = "magma",
-                             alpha = 0.7,
-                             direction = -1,
-                             breaks = rev(seq(1, lmin, -.25)),
-                             limits = c(lmin, 1),
-                             labels = percent) +
+        scale_fill_si(palette = "burnt_siennas",
+                      discrete = FALSE,
+                      alpha = 0.7,
+                      breaks = rev(seq(1, lmin, -.25)),
+                      limits = c(lmin, 1),
+                      labels = percent) +
         facet_wrap(~fundingagency, nrow = 2) +
         ggtitle("% TLD Months of TX (MOT) \n out of total ARVs Dispensed") +
         si_style_map() +
@@ -1137,14 +1115,14 @@ viz_vls_tld <-
     # Scatter plot
     scatter <- df_vl %>%
       ggplot(aes(x = TLD_MOT, y = VLS)) +
-      geom_point(fill = grey50k,
+      geom_point(fill = scooter_light,
                  color = "white",
                  shape = 21,
                  size = 6,
                  alpha = 0.5,
                  show.legend = F) +
       scale_x_continuous(limits = c(lmin, 1), labels = percent) +
-      scale_y_continuous(limits = c(lmin, 1), labels = percent) +
+      #scale_y_continuous(limits = c(lmin, 1), labels = percent) +
       geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = grey70k) +
       facet_wrap(~fundingagency, nrow = 2) +
       labs(x = "% TLD MOT Dispensed", y = "VLS %") +
