@@ -123,13 +123,6 @@
               caption = caption,
               save = FALSE)
 
-  # Batch => Issues to be aware of
-  #vls_cntries[1:17] %>%
-  #vls_cntries[18] %>% # South Sudan [failed], basemape issue
-  #vls_cntries[19:20] %>%
-  #vls_cntries[21] %>% # Ukraine [failed], faceting issue
-  #vls_cntries[22:24] %>%
-
   # Batch
   vls_cntries %>%
     map(.x, .f = ~ viz_vls_tld(df_vl = df_vls_tld,
