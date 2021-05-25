@@ -116,8 +116,8 @@ extract_tx_plp <-
     pds <- paste0("q", c((pd - 1), pd))
     pds <- paste0(pds, collapse = "|")
 
-    curr_pd <- paste0("fy", fy, "q", pd)
-    prev_pd <- paste0("fy", fy, "q", pd - 1)
+    curr_pd <- paste0("fy", str_sub(fy, 3,4), "q", pd)
+    prev_pd <- paste0("fy", str_sub(fy, 3,4), "q", pd - 1)
 
     #Indicators => to be used as dplyr column names
     tx_curr_prev_pd <- rlang::sym(paste0("TX_CURR_Q", (pd - 1)))
@@ -157,13 +157,15 @@ extract_tx_plp <-
       summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
       ungroup() %>%
       reshape_msd() %>% #dplyr::gather(period, val, qtr1:qtr4)
-      filter(str_detect(period, pds)) %>%
+      filter(str_detect(str_to_lower(period), pds)) %>%
       filter(
-        period == curr_pd | (period == prev_pd & indicator == "TX_CURR")
+        #str_to_lower(period) == curr_pd | (period == str_to_lower(period) & indicator == "TX_CURR")
+        (str_to_lower(period) == curr_pd & indicator %in% c("TX_NEW", "TX_RTT")) |
+          (str_to_lower(period) == prev_pd & indicator == "TX_CURR")
       ) %>%
-      mutate(period = toupper(str_sub(period, 7, 8))) %>%
+      mutate(period = toupper(str_sub(period, 5, 6))) %>%
       pivot_wider(names_from = c(indicator, period),
-                  values_from = val) %>%
+                  values_from = value) %>%
       rowwise() %>%
       mutate(
         TX_BADEVENTS_DENOM = sum({{tx_curr_prev_pd}},
@@ -203,23 +205,24 @@ tx_graph <-
       left_join(df, by = c("uid" = "psnuuid")) %>%
       filter(!is.na({{mapvar}})) %>%
       mutate(
-        psnu_short = case_when(
-          str_detect(psnu.y, " County$") ~  str_replace_all(psnu.y,
-                                                            " County$",
-                                                            ""),
-          str_detect(psnu.y, " District$") ~  str_replace_all(psnu.y,
-                                                              " District$",
-                                                              ""),
-          TRUE ~ psnu.y
-        )
+        psnu_short = psnu
       )
 
-    p <- df_geo2 %>%
+    #print(df_geo2 %>% glimpse())
+    #
+
+    df_geo2 <- df_geo2 %>%
       mutate(
         yorder = tidytext::reorder_within(psnu_short, {{mapvar}}, fundingagency),
         rank = percent_rank({{mapvar}})
-      ) %>%
-      ggplot(aes(y = {{mapvar}}, x = yorder)) +
+      )
+
+    # p <- df_geo2 %>%
+    #   mutate(
+    #     yorder = tidytext::reorder_within(psnu_short, {{mapvar}}, fundingagency),
+    #     rank = percent_rank({{mapvar}})
+    #   ) %>%
+    p <- ggplot(data = df_geo2, aes(y = {{mapvar}}, x = yorder)) +
       geom_col(aes(fill = {{mapvar}})) +
       facet_wrap(~ paste0(fundingagency, "\n"), nrow = 2, scales = "free_y") +
       coord_flip() +
@@ -234,7 +237,7 @@ tx_graph <-
         breaks = c(0, .25, .50, .75, 1.00),
         limits = c(0, 1),
         labels = percent
-      )
+      ) +
       scale_y_continuous(labels = percent_format(accuracy = 1)) +
       si_style_xgrid() +
       labs(x = NULL, y = NULL) +

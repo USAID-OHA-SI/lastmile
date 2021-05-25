@@ -4,73 +4,71 @@
 ##  PURPOSE: Geo-depiction of VL - % not covered
 ##  LICENCE: MIT
 ##  DATE:    2020-09-04
-##  UPDATED: 2021-02-25
+##  UPDATED: 2021-05-24
 
-# Libraries
-library(tidyverse)
-library(vroom)
-library(sf)
-library(raster)
-library(gisr)
-library(glitr)
-library(glamr)
-library(janitor)
-library(scales)
-library(patchwork)
-library(ggrepel)
-library(here)
-library(ICPIutilities)
-library(extrafont)
-library(viridis)
-library(tidytext)
+# Libraries ---
 
-# GLOBALS -------------------------------------------------------------
+  library(tidyverse)
+  library(vroom)
+  library(sf)
+  library(raster)
+  library(gisr)
+  library(glitr)
+  library(glamr)
+  library(janitor)
+  library(scales)
+  library(patchwork)
+  library(ggrepel)
+  library(here)
+  library(ICPIutilities)
+  library(extrafont)
+  library(viridis)
+  library(tidytext)
 
-## Data & Output folders
+# GLOBALS ----
 
-dir_data <- "Data"
-dir_dataout <- "Dataout"
-dir_gis <- "GIS"
-dir_graphics <- "Graphics"
-dir_geodata <- si_path("path_vector")
-dir_geo <- si_path("path_vector")
-dir_terr <- si_path("path_raster")
-dir_merdata <- si_path("path_msd")
+  ## Data & Output folders
+  dir_data <- "Data"
+  dir_dataout <- "Dataout"
+  dir_gis <- "GIS"
+  dir_graphics <- "Graphics"
+  dir_geodata <- si_path("path_vector")
+  dir_geo <- si_path("path_vector")
+  dir_terr <- si_path("path_raster")
+  dir_merdata <- si_path("path_msd")
 
 
-## FY21 Q1 MER Data
+  ## FY21 Q2 MER Data
+  psnu_im <- "^MER_.*_PSNU_IM_.*_20210514_v1.1.zip$"
 
-psnu_im <- "^MER_.*_PSNU_IM_.*_20210212_v1.1.zip$"
+  ## Reporting Filters
+  rep_agency = c("USAID", "HHS/CDC")
 
-## Reporting Filters
+  rep_fy = 2021
+  rep_qtr = 2
 
-rep_agency = c("USAID", "HHS/CDC")
+  rep_pd = rep_fy %>%
+    as.character() %>%
+    str_sub(3, 4) %>%
+    paste0("FY", ., "Q", rep_qtr)
 
-rep_fy = 2021
-rep_qtr = 1
+  ## File path + name
+  file_psnu_im <- return_latest(
+    folderpath = dir_merdata,
+    pattern = psnu_im,
+    recursive = TRUE
+  )
 
-rep_pd = rep_fy %>%
-  as.character() %>%
-  str_sub(3, 4) %>%
-  paste0("FY", ., "Q", rep_qtr)
+  file_psnu_im
 
-## File path + name
-file_psnu_im <- return_latest(
-  folderpath = dir_merdata,
-  pattern = psnu_im,
-  recursive = TRUE
-)
+  ## File path + name
+  file_shp <- return_latest(
+    folderpath = dir_geodata,
+    pattern = "VcPepfarPolygons.*.shp",
+    recursive = TRUE
+  )
 
-file_psnu_im
-
-## File path + name
-file_shp <- return_latest(
-  folderpath = dir_geodata,
-  pattern = "VcPepfarPolygons.*.shp",
-  recursive = TRUE
-)
-
-file_shp
+  file_shp
 
 # FUNCTIONS ---------------------------------------------------------
 
@@ -135,7 +133,7 @@ get_title <-
 #'
 get_caption <-
   function(country,
-           rep_pd = "FY21Q1i",
+           rep_pd = "FY21Q2i",
            var = NULL) {
 
   caption <- paste0("OHA/SIEI - Data Source: ",
@@ -171,7 +169,7 @@ get_caption <-
 #'
 get_output_name <-
   function(country,
-           rep_pd = "FY21Q1",
+           rep_pd = "FY21Q2",
            var = "VLC",
            agency = TRUE) {
 
@@ -199,6 +197,10 @@ get_output_name <-
 ## MER PSNU Data
 df_psnu <- read_msd(file_psnu_im)
 
+df_psnu %>% glimpse()
+
+df_psnu %>% prinf()
+
 ## MER Data Munging
 
 ## Filter & Summarize
@@ -216,12 +218,10 @@ df_vl_u15 <- extract_viralload(df_msd = df_psnu,
                                peds = TRUE)
 
 
-
 #PEDs - EID
 df_eid <- extract_eid_viralload(df_msd = df_psnu,
                                 rep_agency = rep_agency,
                                 rep_fy = rep_fy,
-                                #rep_pd = rep_qtr, # For cumulative values
                                 rep_pd = rep_qtr)
 
 
@@ -253,11 +253,9 @@ df_tx_bad %>%
 ## Geodata ---
 
   ## Terrain Raster
-
   terr <- get_raster(terr_path = dir_terr)
 
   ## GEO - PEPFAR Orgs boundaries
-
   spdf_pepfar <- file_shp %>% sf::read_sf()
 
   df_attrs <- gisr::get_ouuids() %>%
@@ -284,33 +282,6 @@ map_viralload(
   facet_rows = 2
 )
 
-map_viralload(
-  spdf = spdf_pepfar,
-  df = df_vl,
-  vl_variable = "VLC",
-  cntry = cname,
-  terr_raster = terr,
-  agency = T,
-  facet_rows = 2
-)
-
-map_viralload(
-  spdf = spdf_pepfar,
-  df = df_vl,
-  vl_variable = "VLnC",
-  cntry = cname,
-  terr_raster = terr,
-  agency = T,
-  facet_rows = 2
-)
-
-map_viralloads(
-  spdf = spdf_pepfar,
-  df = df_vl,
-  cntry = cname,
-  terr_raster = terr,
-  facet_rows = 2
-)
 
 # PEDS Test
 map_peds_viralloads(
@@ -350,7 +321,6 @@ map_vlc_eid(
 )
 
 # Test TX_ML_PLP map
-
 map_generic(
   spdf = spdf_pepfar,
   df_gen = df_tx_bad,
@@ -415,7 +385,7 @@ map_ous <- df_vl_u15 %>%
   distinct(operatingunit) %>%
   pull()
 
-map_ous[23:24] %>%
+map_ous %>%
   map(.x, .f = ~ map_peds_viralloads(
       spdf = spdf_pepfar,
       df = df_vl_u15,
@@ -447,24 +417,13 @@ map_ous %>%
   )
 
 
-
-
-
-## VL + EID Coverage
+# Batch: VL PEDS  & EID Coverage
 map_ous <- df_eid %>%
   filter(!str_detect(operatingunit, " Region$"),
          !is.na(eid_cov_under2)) %>%
   distinct(operatingunit) %>%
   pull()
 
-map_ous <- df_vl_u15 %>%
-  filter(!str_detect(operatingunit, " Region$"),
-         !is.na(VLC)) %>%
-  distinct(operatingunit) %>%
-  pull()
-
-
-# Batch: VL PEDS  & EID Coverage
 map_ous %>%
   map(.x, .f = ~ map_vlc_eid(
       spdf = spdf_pepfar,
@@ -480,7 +439,6 @@ map_ous %>%
 
 
 # Batch: TX_ML_PLP map
-
 df_tx_bad %>%
   filter(!str_detect(operatingunit, " Region$"),
          !is.na(TX_ML_PLP)) %>%

@@ -87,7 +87,7 @@ extract_viralload <-
       ungroup() %>%
       reshape_msd(clean = TRUE) %>%
       dplyr::select(-period_type) %>%
-      spread(indicator, val)
+      spread(indicator, value)
 
     # Calculate VL Stats
     df_vl <- df_vl %>%
@@ -156,7 +156,7 @@ extract_peds_viralload <-
       ungroup() %>%
       reshape_msd(clean = TRUE) %>%
       dplyr::select(-period_type) %>%
-      spread(indicator, val)
+      spread(indicator, value)
 
     # Calculate VL Stats
     df_vl <- df_vl %>%
@@ -258,7 +258,7 @@ extract_eid_viralload <-
       ungroup() %>%
       reshape_msd(clean = TRUE) %>%
       dplyr::select(-period_type) %>%
-      spread(indicator, val) %>%
+      spread(indicator, value) %>%
       mutate(eid_cov_under2 = (PMTCT_EID_Less_Equal_Two_Months / PMTCT_EID_D)) %>%
       filter(period == pd)
 
@@ -314,8 +314,8 @@ extract_vls_tld <-
       dplyr::select(-period_type) %>%
       mutate(
         val = case_when(
-          str_detect(indicator,"180-count") ~ val*6,
-          str_detect(indicator, "90-count") ~ val*3,
+          str_detect(indicator,"180-count") ~ value*6,
+          str_detect(indicator, "90-count") ~ value*3,
           TRUE ~ val
         ),
         indicator = case_when(
@@ -379,6 +379,7 @@ map_viralload <-
     # Variables
     df_geo <- {{spdf}}
     df_vl <- {{df}}
+    pd <- df_vl %>% pull(period) %>% first()
     country <- {{cntry}}
     vl_var <- {{vl_variable}}
     terr <- {{terr_raster}}
@@ -446,14 +447,7 @@ map_viralload <-
           labels = labels,
           guide = guide_legend(label.position = "bottom")
         )
-        # scale_fill_stepsn(
-        #   breaks = c(0, .8, .9, 1),
-        #   guide = guide_colorsteps(even.steps = FALSE),
-        #   na.value = grey40k,
-        #   limits = c(0, 1),
-        #   labels = percent,
-        #   #colors = RColorBrewer::brewer.pal(n = 11, name = "RdYlGn")
-        # )
+
     }
     else if (tolower(vl_var) == "vlc") {
       theme_map <- base_map +
@@ -472,15 +466,6 @@ map_viralload <-
           limits = c(0, 1),
           labels = percent
         )
-        # scale_fill_viridis_c(
-        #   option = "magma",
-        #   alpha = 0.9,
-        #   direction = -1,
-        #   na.value = grey40k,
-        #   breaks = c(0, .25, .50, .75, 1.00),
-        #   limits = c(0, 1),
-        #   labels = percent
-        # )
     }
     else {
       theme_map <- base_map +
@@ -499,15 +484,6 @@ map_viralload <-
           limits = c(0, 1),
           labels = percent
         )
-        # scale_fill_viridis_c(
-        #   option = "viridis",
-        #   alpha = 0.9,
-        #   direction = -1,
-        #   na.value = grey40k,
-        #   breaks = c(0, .25, .50, .75, 1.00),
-        #   limits = c(0, 1),
-        #   labels = percent
-        # )
     }
 
     # Check
@@ -526,7 +502,6 @@ map_viralload <-
         size = 1
       ) +
       si_style_map()
-
 
     # Add Caption
     if (caption == TRUE) {
@@ -556,10 +531,11 @@ map_viralload <-
     # Save map
     if (save == TRUE) {
 
-      print(theme_map)
+      #print(theme_map)
 
       si_save(
-        here::here("Graphics", get_output_name(country, var = vl_var))
+        here::here("Graphics", get_output_name(country, rep_pd = pd, var = vl_var)),
+        plot = theme_map
       )
     }
 
@@ -589,6 +565,7 @@ map_viralloads <-
     # Variables
     df_geo <- {{spdf}}
     df_vl <- {{df}}
+    pd <- df_vl %>% pull(period) %>% first()
     country <- {{cntry}}
     terr <- {{terr_raster}}
     facets <- {{facet_rows}}
@@ -654,9 +631,9 @@ map_viralloads <-
       print(m_all)
 
       si_save(
-        here("Graphics", get_output_name(country,
-                                         var = "VL",
-                                         agency = agency)))
+        here("Graphics",
+             get_output_name(country, rep_pd = pd, var = "VL", agency = agency)),
+        plot = m_all)
     }
 
     return(m_all)
@@ -731,7 +708,7 @@ map_peds_viralloads <-
       plot_layout(widths = c(1, 1)) +
       plot_annotation(caption = get_caption(country))
 
-    print(m_all)
+    #print(m_all)
 
     # Save output
     if (save == TRUE) {
@@ -742,7 +719,7 @@ map_peds_viralloads <-
             get_output_name(country, var = "VLC_S", agency = agency),
             "_ViralLoad_",
             "_ViralLoad_PEDS_")),
-        plot = last_plot(),
+        plot = m_all,
         scale = 1.2,
         dpi = 400,
         width = 10,
@@ -769,7 +746,6 @@ map_peds_viralloads <-
 #' @param four_parts Use 4 parts classification: [0-25, 25-50, 50-75, 75-100]
 #' @return ggplot plot of the map
 #
-
 map_generic <-
   function(spdf,
            df_gen,
@@ -861,16 +837,20 @@ map_generic <-
 
     # Update legend size and position
     theme_map <- theme_map +
+      labs(title = gen_title) +
       theme(
+        plot.title = element_text(family = "Source Sans Pro", size = 14, hjust = .5),
+        plot.subtitle = element_text(family = "Source Sans Pro", size = 12),
+        plot.caption = element_text(family = "Source Sans Pro", size = 8),
         legend.title = element_blank(),
         legend.position =  "bottom",
         legend.direction = "horizontal",
         legend.key.width = ggplot2::unit(1.5, "cm"),
         legend.key.height = ggplot2::unit(.5, "cm")
-      ) +
-      labs(title = gen_title)
+      )
 
-    print(theme_map)
+
+    #print(theme_map)
 
     # Save output
     if (save == TRUE) {
@@ -881,7 +861,7 @@ map_generic <-
                     toupper(cntry), "_",
                     Sys.Date(),
                     ".png")),
-        plot = last_plot(),
+        plot = theme_map,
         scale = 1.2,
         dpi = 400,
         width = 10,
@@ -985,19 +965,20 @@ map_vlc_eid <-
           ", Missing data shown in gray."
         ),
         title = paste0(str_to_upper(country),
-                       " VLC & EID PROXY COVERAGE SUMMARY")
+                       " VLC & EID PROXY COVERAGE SUMMARY"),
+        theme = theme(plot.title = element_text(hjust = .5))
       )
 
     # Print and save
     if (save_all == TRUE) {
-      print(m_all)
+      #print(m_all)
 
       ggsave(
         here(
           "Graphics",
           get_output_name(cntry, var = "VL_EID_Coverage")
         ),
-        plot = last_plot(),
+        plot = m_all,
         scale = 1.2,
         dpi = 400,
         width = 10,
