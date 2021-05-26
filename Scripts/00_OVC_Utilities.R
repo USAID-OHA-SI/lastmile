@@ -19,10 +19,10 @@
 #'
 extract_ovc_coverage <-
   function(df_msd,
-           rep_fy = 2020,
+           rep_fy = 2021,
            rep_age = "<20",
            rep_agency = NULL,
-           rep_pd = "FY20Q2",
+           rep_pd = "FY21Q2",
            sumlevel = "PSNU") {
 
     # All Params
@@ -38,7 +38,6 @@ extract_ovc_coverage <-
 
     # SNU1
     if (sumlevel == "SNU1") {
-
       grp_cols <- c("fiscal_year",
                     "operatingunit",
                     "snu1uid",
@@ -74,7 +73,7 @@ extract_ovc_coverage <-
       # message to be printed
       msg <- paste0("ERROR - Unknown OVC Age Band: ", age)
 
-      cat("\n", Wavelength::paint_red(msg), "\n")
+      cat("\n", crayon::red(txt)(msg), "\n")
 
       return(NULL)
     }
@@ -90,13 +89,12 @@ extract_ovc_coverage <-
 
       # OVC Cov for all agency
       df_proxy_ovc_cov <- df_proxy_ovc_cov %>%
-        #group_by(fiscal_year, operatingunit, snu1uid, snu1, psnuuid, psnu, indicator) %>%
         group_by_at(all_of(grp_cols)) %>%
         summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
         ungroup() %>%
-        reshape_msd(clean = TRUE) %>%
+        reshape_msd(direction = "long", clean = TRUE) %>%
         dplyr::select(-period_type) %>%
-        spread(indicator, val)
+        spread(indicator, value)
 
       # Calcualte Proxy Coverage
       df_proxy_ovc_cov <- df_proxy_ovc_cov %>%
@@ -117,13 +115,12 @@ extract_ovc_coverage <-
         mutate(
           indicator = paste0(indicator, "_", fundingagency) # Keep track of agency
         ) %>%
-        #group_by(fiscal_year, operatingunit, snu1uid, snu1, psnuuid, psnu, indicator) %>%
         group_by_at(all_of(grp_cols)) %>%
         summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
         ungroup() %>%
         reshape_msd(clean = TRUE) %>%
         dplyr::select(-period_type) %>%
-        spread(indicator, val)
+        spread(indicator, value)
 
       df_proxy_ovc_cov <- df_proxy_ovc_cov %>%
         rowwise()  %>%
@@ -171,7 +168,7 @@ extract_ovc_coverage <-
     if (nrow(df_proxy_ovc_cov) == 0) {
       cat(
         "\n",
-        Wavelength::paint_red(
+        crayon::red(
           paste0("No OVC Proxy Coverage data available for ", pd)), "\n")
 
       return(NULL)
@@ -191,7 +188,7 @@ extract_ovc_coverage <-
 #'
 extract_ovc_tx_overlap <-
   function(df_msd,
-           rep_fy = 2020,
+           rep_fy = 2021,
            rep_agency = c("USAID","HHS/CDC")) {
 
     # All Params
@@ -231,7 +228,7 @@ extract_ovc_tx_overlap <-
 
     #
     df <- df %>%
-      rename(targets = val) %>%
+      rename(targets = value) %>%
       left_join(df_ovc_mix, by = "psnuuid") %>%
       mutate(
         ovc_group = case_when(
@@ -279,7 +276,11 @@ map_ovc_coverage <-
 
     # Geodata
     spdf_adm0 <- spdf %>%
-      filter(operatingunit %in% country, type == "OU")
+      filter(label == "country",
+             operatingunit %in% country)
+
+    spdf_adm1 <- spdf %>%
+      filter(label == "snu1", operatingunit == country)
 
     # reformat data
     if (agency == TRUE) {
@@ -295,10 +296,11 @@ map_ovc_coverage <-
       filter(proxy_coverage > 0)
 
     # Get basemap
-    basemap <- get_basemap(spdf = spdf,
-                           cntry = country,
-                           terr_raster = terr,
-                           add_admins = TRUE)
+    basemap <- terrain_map(countries = lookup_country(country),
+                           adm0 = spdf_adm0,
+                           adm1 = spdf_adm1,
+                           mask = TRUE,
+                           terr = terr_raster)
 
     # Overlay program data
     ovc_map <- basemap +
@@ -308,22 +310,28 @@ map_ovc_coverage <-
         lwd = .2,
         color = grey10k
       ) +
+      scale_fill_si(
+        palette = "burnt_siennas",
+        discrete = FALSE,
+        labels = percent,
+        limits = c(0, 1)
+      ) +
+      geom_sf(
+        data = spdf_adm0,
+        colour = grey10k,
+        fill = NA,
+        size = 2
+      ) +
       geom_sf(
         data = spdf_adm0,
         colour = grey90k,
         fill = NA,
-        size = 1
+        size = .75
       ) +
-      scale_fill_viridis_c(
-        option = "magma",
-        direction = -1,
-        labels = percent,
-        limits = c(0, 1)
-      )
       si_style_map() +
       theme(
         legend.position = "bottom",
-        legend.key.width = ggplot2::unit(1, "cm"),
+        legend.key.width = ggplot2::unit(1.5, "cm"),
         legend.key.height = ggplot2::unit(.5, "cm")
       )
 
@@ -380,11 +388,17 @@ plot_ovc_coverage <-
                  color = grey50k,
                  shape = 21,
                  show.legend = F) +
-      scale_size_continuous(range = c(3,8)) +
-      scale_color_viridis_c(option = "magma",
-                            direction = -1,
-                            aesthetics = c("fill"),
-                            limits = c(0, 1)) +
+      scale_size_continuous(range = c(3,12)) +
+      # scale_color_viridis_c(option = "magma",
+      #                       direction = -1,
+      #                       aesthetics = c("fill"),
+      #                       limits = c(0, 1)) +
+      scale_fill_si(
+        palette = "burnt_siennas",
+        discrete = FALSE,
+        labels = percent,
+        limits = c(0, 1)
+      ) +
       geom_hline(aes(yintercept = .9),
                  color = "gray70",
                  size = .7,
@@ -406,11 +420,11 @@ plot_ovc_coverage <-
       annotate(geom = "text",
                x = low$label, y = (low$proxy_coverage_max + .06),
                label = "Circle Sized by TX_CURR", hjust = "left",
-               size = 4, color = grey50k, family = "Gill Sans MT") +
+               size = 4, color = grey50k, family = "Source Sans Pro") +
       annotate(geom = "text",
                x = low$label, y = .905,
-               label = "90%\nthreshold", hjust = "left",
-               size = 4, color = grey50k, family = "Gill Sans MT") +
+               label = "90%", hjust = "left",
+               size = 4, color = grey50k, family = "Source Sans Pro") +
       si_style_xgrid()
 
     return(dotplot)
@@ -479,16 +493,16 @@ viz_ovc_coverage <-
         subtitle = "The size of circles represents the volume of TX_CURR and the color represents the % coverage",
         caption = caption
       ) +
-      theme(text = element_text(family = "Gill Sans MT"))
+      theme(text = element_text(family = "Source Sans Pro"),
+            plot.title = element_text(family = "Source Sans Pro", size = 14),
+            plot.subtitle = element_text(family = "Source Sans Pro", size = 12),
+            plot.caption = element_text(family = "Source Sans Pro", size = 8))
 
     # Save plot
     if (sgraph == TRUE & endsWith(tolower(fname), ".png")) {
 
-      print(graph)
-
-      ggsave(here("Graphics", fname),
-             plot = last_plot(), scale = 1.2, dpi = 310,
-             width = 10, height = 7, units = "in")
+      si_save(here("Graphics", fname),
+              plot = graph, scale = 1.2)
 
       # Save individual plot for larger dataset
       if (nrow(df) > 30) {
@@ -499,17 +513,15 @@ viz_ovc_coverage <-
           plot_annotation(
             title = paste0(pd, " | OVC Program Coverage Proxy of TX_CURR (",
                            age_group, ")"),
-            #subtitle = "The size of circles represents the volume of TX_CURR and the color represents the % coverage",
             caption = caption
           ) +
-          theme(text = element_text(family = "Gill Sans MT"))
+          theme(text = element_text(family = "Source Sans Pro"))
 
-        print(graph_map)
+        #print(graph_map)
 
-        ggsave(here("Graphics",
-                    str_replace(fname, "Proxy_Coverage", "Proxy_Coverage_Map")),
-               plot = last_plot(), scale = 1.2, dpi = 310,
-               width = 10, height = 7, units = "in")
+        si_save(here("Graphics",
+                     str_replace(fname, "Proxy_Coverage", "Proxy_Coverage_Map")),
+                plot = graph_map, scale = 1.2)
 
         # dotplot
         graph_dotplot <- viz +
@@ -522,15 +534,12 @@ viz_ovc_coverage <-
           ) +
           theme(text = element_text(family = "Gill Sans MT"))
 
-        print(graph_dotplot)
-
         ggsave(here("Graphics",
                     str_replace(fname, "Proxy_Coverage", "Proxy_Coverage_DotPlot")),
-               plot = last_plot(), scale = 1.2, dpi = 310,
-               width = 10, height = 7, units = "in")
+               plot = graph_dotplot, scale = 1.2,
+               width = 6, height = 10)
       }
     }
-
 
     return(graph)
   }
@@ -559,20 +568,18 @@ heatmap_ovctx_coverage <-
       ggplot(aes(x = fundingagency,
                  y = reorder(psnu, targets),
                  fill = fundingagency)) +
-      geom_tile(color = grey20k, alpha = .6) +
+      geom_tile(color = grey20k, alpha = .7) +
       geom_text(aes(label = comma(targets, accuracy = 1))) +
-      scale_fill_manual(values = c(USAID_mgrey, USAID_lgrey),
-                        na.translate = TRUE, na.value = "red") +
-      xlab(label = "") +
-      ylab(label = "") +
+      scale_fill_manual(values = c(usaid_medgrey, usaid_lightgrey),
+                        na.value = "red") +
       facet_wrap(~indicator) +
-      #labs(subtitle = "Summary of PSNUs with Mixed Agency Targets") +
-      labs(subtitle = "Summary by PSNUs & Agency") +
+      labs(x = "", y = "",
+           subtitle = "Summary by PSNUs & Agency") +
       si_style_xline() +
       theme(legend.position = "none",
-            plot.title = element_text(family = "Gill Sans MT"),
-            axis.text = element_text(family = "Gill Sans MT"),
-            strip.text = element_text(family = "Gill Sans MT", hjust = .5),
+            plot.title = element_text(family = "Source Sans Pro"),
+            axis.text = element_text(family = "Source Sans Pro"),
+            strip.text = element_text(family = "Source Sans Pro", hjust = .5),
             panel.spacing.x = unit(-1, "lines"))
 
     return(heatmap)
@@ -596,49 +603,47 @@ map_ovctx_coverage <-
 
   # Geodata
   spdf_adm0 <- spdf %>%
-    filter(operatingunit %in% country, type == "OU")
+    filter(operatingunit %in% country, label == "country")
+
+  spdf_adm1 <- spdf %>%
+    filter(operatingunit %in% country, label == "snu1")
+
+
 
   # Append Program data to geo
   spdf_ovctx <- spdf %>%
-    #filter(operatingunit %in% country, type == "PSNU") %>%
     left_join(df_ovctx, by = c("uid" = "psnuuid")) %>%
     filter(!is.na(ovc_group)) %>%
     mutate(ovc_colour = case_when(
-      ovc_group == "USAID Only" ~ USAID_blue,
-      ovc_group == "CDC Only" ~ USAID_ltblue,
-      ovc_group == "Mixed" ~ USAID_dkred,
-      ovc_group == "OVC & TX do not overlap in this district" ~ USAID_mgrey,
-      TRUE ~ USAID_mgrey
+      ovc_group == "USAID Only" ~ usaid_blue,
+      ovc_group == "CDC Only" ~ usaid_lightblue,
+      ovc_group == "Mixed" ~ usaid_red,
+      ovc_group == "OVC & TX do not overlap in this district" ~ usaid_lightgrey,
+      TRUE ~ usaid_medgrey
     ))
 
   # ovc_labels <- spdf_ovctx %>% distinct(ovc_group) %>% pull()
   # ovc_colors <- spdf_ovctx %>% distinct(ovc_colour) %>% pull()
 
-  ovc_items <- c("USAID Only" = USAID_blue,
-                 "CDC Only"   = USAID_ltblue,
-                 "Mixed"      = USAID_dkred,
-                 "OVC & TX do not overlap in this district" = USAID_mgrey)
+  ovc_items <- c("USAID Only" = usaid_blue,
+                 "CDC Only"   = usaid_lightblue,
+                 "Mixed"      = usaid_red,
+                 "OVC & TX do not overlap in this district" = usaid_lightgrey)
 
   # Get basemap
-  basemap <- get_basemap(spdf = spdf,
-                         cntry = country,
-                         terr_raster = terr_raster,
-                         add_admins = TRUE)
+  basemap <- terrain_map(countries = lookup_country(country),
+                         adm0 = spdf_adm0,
+                         adm1 = spdf_adm1,
+                         mask = TRUE,
+                         terr = terr_raster)
 
   map <- basemap +
-    #geom_sf(data = spdf_adm0, colour = grey90k, fill = USAID_mgrey, size = .2) +
-    geom_sf(data = spdf_ovctx, aes(fill = ovc_group),
-            lwd = .2, color = grey10k) +
-    geom_sf(data = spdf_adm0, colour = grey90k, fill = NA, size = 1) +
-    # scale_fill_manual(
-    #   #values = c("#384F6C","#BA3D56", USAID_dkred, USAID_mgrey, USAID_mgrey),
-    #   values = c(USAID_blue, USAID_ltblue, USAID_dkred, USAID_mgrey, USAID_mgrey),
-    #   labels = c("USAID Only", "CDC Only", "Mixed",
-    #              "OVC & TX do not overlap in this district", "NA")
-    # ) +
+    geom_sf(data = spdf_ovctx,
+            aes(fill = ovc_group),
+            lwd = .3, color = grey10k) +
+    geom_sf(data = spdf_adm0, colour = grey10k, fill = NA, size = 2) +
+    geom_sf(data = spdf_adm0, colour = grey90k, fill = NA, size = .75) +
     scale_fill_manual(values = ovc_items) +
-    # scale_fill_identity(labels = ovc_labels, guide = "legend") +
-    #labs(label = "Agency with OVC_SERV_UNDER_18 \n & TX_CURR <20 Targets in FY21") +
     labs(subtitle = "Targets by Agency") +
     si_style_map() +
     theme(
@@ -647,7 +652,9 @@ map_ovctx_coverage <-
       legend.key.width = ggplot2::unit(1, "cm"),
       legend.key.height = ggplot2::unit(.5, "cm"),
       legend.text.align = 0,
-      plot.title = element_text(family = "Gill Sans MT")
+      plot.title = element_text(family = "Source Sans Pro", size = 14),
+      plot.subtitle = element_text(family = "Source Sans Pro", size = 12),
+      plot.caption = element_text(family = "Source Sans Pro", size = 8)
     )
 
   return(map)
@@ -670,31 +677,35 @@ map_mixed_coverage <-
 
     # Geodata
     spdf_adm0 <- spdf %>%
-      filter(operatingunit %in% country, type == "OU")
+      filter(operatingunit %in% country, label == "country")
+
+    spdf_adm1 <- spdf %>%
+      filter(operatingunit %in% country, label == "snu1")
 
     # Append Program data to geo
     spdf_ovctx <- spdf %>%
-      #filter(operatingunit %in% country, type == "PSNU") %>%
       left_join(df_ovctx, by = c("uid" = "psnuuid")) %>%
       filter(ovc_group == "Mixed")
 
     # Get basemap
-    basemap <- get_basemap(spdf = spdf,
-                           cntry = country,
-                           terr_raster = terr_raster,
-                           add_admins = TRUE)
+    basemap <- terrain_map(countries = lookup_country(country),
+                           adm0 = spdf_adm0,
+                           adm1 = spdf_adm1,
+                           mask = TRUE,
+                           terr = terr_raster)
 
     mixed_map <- basemap +
-      geom_sf(data = spdf_ovctx, aes(fill = ovc_group),
-              lwd = .2, fill = USAID_dkred,
+      geom_sf(data = spdf_ovctx,
+              lwd = .3, fill = usaid_red,
               color = grey10k, show.legend = F) +
-      #scale_fill_manual(values = c(USAID_dkred)) +
-      geom_sf(data = spdf_adm0, colour = grey90k, fill = NA, size = 1) +
-      #labs(subtitle = "Mixed Agency OVC_SERV_UNDER_18 \n & TX_CURR <20 Targets in FY21") +
+      geom_sf(data = spdf_adm0, colour = grey10k, fill = NA, size = 2) +
+      geom_sf(data = spdf_adm0, colour = grey90k, fill = NA, size = .75) +
       labs(subtitle = "Mixed Targets") +
       si_style_map() +
       theme(
-        plot.title = element_text(family = "Gill Sans MT")
+        plot.title = element_text(family = "Source Sans Pro", size = 14),
+        plot.subtitle = element_text(family = "Source Sans Pro", size = 12),
+        plot.caption = element_text(family = "Source Sans Pro", size = 8)
       )
 
     return(mixed_map)
@@ -727,11 +738,10 @@ viz_ovctx_coverage <-
                                 df_ovctx = df_ovctx,
                                 terr_raster = terr)
 
-    viz_title <- "FY21 Targets - PSNUs with Mixed Agency OVC_SERV_UNDER_18 & TX_CURR <20"
+    viz_title <- "FY22 Targets - PSNUs with Mixed Agency OVC_SERV_UNDER_18 & TX_CURR <20"
 
     # Combine graphs
     viz <- (ovctx + mixed + heatmap) +
-      #plot_layout(nrow = 1) +
       plot_annotation(
         title = viz_title,
         caption = caption

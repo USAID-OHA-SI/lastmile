@@ -5,181 +5,178 @@
 ##  DATE:    2020-09-04
 ##  UPDATED: 2021-03-02
 
-# Libraries
-library(tidyverse)
-library(vroom)
-library(sf)
-library(sp)
-library(raster)
-library(gisr)
-library(glitr)
-library(glamr)
-library(janitor)
-library(scales)
-library(patchwork)
-library(here)
-library(ICPIutilities)
-library(extrafont)
+# Libraries ----
+
+    library(tidyverse)
+    library(vroom)
+    library(sf)
+    library(sp)
+    library(raster)
+    library(gisr)
+    library(glitr)
+    library(glamr)
+    library(janitor)
+    library(scales)
+    library(patchwork)
+    library(here)
+    library(ICPIutilities)
+    library(extrafont)
 
 # REQUIRED -------------------------------------------------------------------------------
 
-## Get Credentials
-
-source("../_secrets/credentials.R")
-source("./Scripts/00_Utilities.R")
-source("./Scripts/00_Geo_Utilities.R")
-source("./Scripts/00_OVC_Utilities.R")
+    ## Get Credentials
+    source("./Scripts/00_Utilities.R")
+    source("./Scripts/00_Geo_Utilities.R")
+    source("./Scripts/00_OVC_Utilities.R")
 
 
 # GLOBALS -------------------------------------------------------------
 
-## Data & Output folders
+    ## Data & Output folders
+    dir_data <- "Data"
+    dir_dataout <- "Dataout"
+    dir_gis <- "GIS"
+    dir_graphics <- "Graphics"
+    dir_geodata <- si_path("path_vector")
+    dir_terr <- si_path("path_raster")
+    dir_merdata <- si_path("path_msd")
 
-dir_data <- "Data"
-dir_dataout <- "Dataout"
-dir_gis <- "GIS"
-dir_graphics <- "Graphics"
-dir_geodata <- si_path("path_vector")
-dir_terr <- si_path("path_raster")
-dir_merdata <- si_path("path_msd")
+    ## Reporting Filters
+    rep_agency = "USAID"
+    rep_agencies <- c("USAID", "HHS/CDC")
 
-## Reporting Filters
-rep_agency = "USAID"
-rep_agencies <- c("USAID", "HHS/CDC")
+    age_group <- "<20" # options are: "<15", "<20", "All"
+    age_groups <- c("<15", "<20")
 
-age_group <- "<20" # options are: "<15", "<20", "All"
-age_groups <- c("<15", "<20")
+    rep_fy = 2021
+    rep_qtr = 2 # Data available for Q2 & 4
 
-rep_fy = 2021
-rep_qtr = 1 # Data available for Q2 & 4
-
-rep_pd = rep_fy %>%
-    as.character() %>%
-    str_sub(3,4) %>%
-    paste0("FY", ., "Q", rep_qtr)
-
-
-## MER Data - get the latest MSD PSNU x IM file
-
-file_psnu_im <- return_latest(
-    folderpath = dir_merdata,
-    pattern = "^MER_.*_PSNU_IM_.*_20210212_v1_1.zip$",
-    recursive = FALSE
-)
-
-## Shapefile path
-file_shp <- return_latest(
-    folderpath = dir_geo,
-    pattern = "VcPepfarPolygons.*.shp",
-    recursive = TRUE
-)
+    rep_pd = rep_fy %>%
+        as.character() %>%
+        str_sub(3,4) %>%
+        paste0("FY", ., "Q", rep_qtr)
 
 
+    ## MER Data - get the latest MSD PSNU x IM file
 
-# FUNCTIONS ---------------------------------------------------------
-
-## NOTE: These functions will end up in gisr package
-
-#' Get Title
-#'
-#' @param country country name
-#' @param var df variable
-#' @return plot caption
-#'
-get_title <- function(country, var = NULL) {
-
-    title <- toupper({{country}})
-
-    var_name <- toupper({{var}})
-
-    # Get label
-
-    # Title
-    if (!is.null(var_name)) {
-        title <- paste0(toupper({{country}}), " - ", var_name)
-    }
-    else {
-        title <- var_label
-    }
-
-    return(title)
-}
-
-#' Graphic caption
-#'
-#' @param country country name
-#' @param var df variable
-#' @return plot caption
-#'
-get_caption <- function(country,
-                        age = "<20",
-                        agency = "All Agencies",
-                        var = "Proxy Coverage",
-                        source = "FY21Q1i") {
-    # Params
-    var <- str_replace_all({{var}}, "_", " ")
-    agency <- {{agency}}
-    agency <- ifelse(!is.null(agency) & toupper(agency) == "USAID",
-                     "USAID ", " ")
-
-    # Build caption
-    caption <- paste0(
-        "*NOTE: Scales are truncated to 100% - Data Source: ",
-        source, " MSD\n",
-        var, " = OVC_HIV_STAT_POS ", agency, "/ TX_CURR Age ", age, " All Agencies\n",
-        "Shown for PSNUs in which USAID is the only agency with OVC Programming\n",
-        toupper({{country}}), " - Produced by OHA/SIEI on ", format(Sys.Date(), "%Y%m%d")
+    file_psnu_im <- return_latest(
+        folderpath = dir_merdata,
+        pattern = "^MER_.*_PSNU_IM_.*_\\d{8}_v1_1.zip$",
+        recursive = FALSE
     )
 
-    return(caption)
-}
+    ## Shapefile path
+    file_shp <- return_latest(
+        folderpath = dir_geodata,
+        pattern = "VcPepfarPolygons.*.shp",
+        recursive = TRUE
+    )
 
 
 
-#' Graphic file name
-#'
-#' @param country country name
-#' @param var df variable
-#' @return plot file name
-#'
-get_output_name <- function(country,
-                            rep_pd = "FY21Q1",
+# FUNCTIONS ----
+
+    ## NOTE: These functions will end up in gisr package
+
+    #' Get Title
+    #'
+    #' @param country country name
+    #' @param var df variable
+    #' @return plot caption
+    #'
+    get_title <- function(country, var = NULL) {
+
+        title <- toupper({{country}})
+
+        var_name <- toupper({{var}})
+
+        # Get label
+
+        # Title
+        if (!is.null(var_name)) {
+            title <- paste0(toupper({{country}}), " - ", var_name)
+        }
+        else {
+            title <- var_label
+        }
+
+        return(title)
+    }
+
+    #' Graphic caption
+    #'
+    #' @param country country name
+    #' @param var df variable
+    #' @return plot caption
+    #'
+    get_caption <- function(country,
+                            age = "<20",
+                            agency = "All Agencies",
                             var = "Proxy Coverage",
-                            age = NULL,
-                            agency = NULL) {
+                            source = "FY21Q2i") {
+        # Params
+        var <- str_replace_all({{var}}, "_", " ")
+        agency <- {{agency}}
+        agency <- ifelse(!is.null(agency) & toupper(agency) == "USAID",
+                         "USAID ", " ")
 
-    name <- paste0(rep_pd, "_",
-                   str_replace({{var}}, " ", "_"))
+        # Build caption
+        caption <- paste0(
+            "*NOTE: Scales are truncated to 100% - Data Source: ",
+            source, " MSD\n",
+            var, " = OVC_HIV_STAT_POS ", agency, "/ TX_CURR Age ", age, " All Agencies\n",
+            "Shown for PSNUs in which USAID is the only agency with OVC Programming\n",
+            toupper({{country}}), " - Produced by OHA/SIEI on ", format(Sys.Date(), "%Y%m%d")
+        )
 
-    # Age
-    if (!is.null(age)) {
-        name <- paste0(name, "_", str_replace({{age}}, "<", "Under"))
+        return(caption)
     }
 
-    # Agency
-    if (!is.null(agency)) {
-        name <- paste0(name, "_", str_replace({{agency}}, " ", "_"))
+
+
+    #' Graphic file name
+    #'
+    #' @param country country name
+    #' @param var df variable
+    #' @return plot file name
+    #'
+    get_output_name <- function(country,
+                                rep_pd = "FY21Q2",
+                                var = "Proxy Coverage",
+                                age = NULL,
+                                agency = NULL) {
+
+        name <- paste0(rep_pd, "_",
+                       str_replace({{var}}, " ", "_"))
+
+        # Age
+        if (!is.null(age)) {
+            name <- paste0(name, "_", str_replace({{age}}, "<", "Under"))
+        }
+
+        # Agency
+        if (!is.null(agency)) {
+            name <- paste0(name, "_", str_replace({{agency}}, " ", "_"))
+        }
+
+        # Country & Date
+
+        name <- paste0(name, "_",
+                       toupper({{country}}),
+                       "_",
+                       format(Sys.Date(), "%Y%m%d"),
+                       ".png")
+
+        return(name)
     }
 
-    # Country & Date
 
-    name <- paste0(name, "_",
-                   toupper({{country}}),
-                   "_",
-                   format(Sys.Date(), "%Y%m%d"),
-                   ".png")
-
-    return(name)
-}
-
-
-# DATA --------------------------------------------------------------
+# DATA ----
 
     ## MER PSNU Data
-    df_psnu <- vroom(file_psnu_im, col_types = c(.default = "c"))
+    df_psnu <- file_psnu_im %>% read_msd()
 
-    df_psnu <- df_psnu %>%
-        dplyr::mutate(across(targets:cumulative, as.integer))
+    df_psnu %>% glimpse()
 
     ## Geodata
 
@@ -197,9 +194,9 @@ get_output_name <- function(country,
     spdf_pepfar <- spdf_pepfar %>%
         left_join(df_attrs, by = c("uid" = "id"))
 
-    ## MER Data Munging
+# MER Data Munging ----
 
-    ## Proxy OVC Coverage
+    # Proxy OVC Coverage
     df_ovc_cov <- extract_ovc_coverage(df_msd = df_psnu,
                                        rep_fy = rep_fy,
                                        rep_age = "<20",   #age_group, #<15 or <20
@@ -208,23 +205,17 @@ get_output_name <- function(country,
                                        sumlevel = "PSNU") # PSNU or SNU1
 
 
-    ## OVC & TX Overlap
+    # OVC & TX Overlap
     df_ovc_tx <- extract_ovc_tx_overlap(df_msd = df_psnu,
-                                        rep_fy = rep_fy + 1,
+                                        rep_fy = rep_fy,
                                         rep_agency = rep_agencies)
 
 
 # VIZ --------------------------------------
 
-    #OVC  Proxy Cov
-
-    ## Test OVC  Proxy Cov maps
-    #cname <- "Zambia"
-    #cname <- "Zimbabwe"
-    #cname <- "Nigeria"
-    #cname <- "Ethiopia"
-    cname <- "Tanzania"
-    #cname <- "South Africa"
+    #OVC Proxy Cov
+    cname <- "Nigeria"
+    cname <- "Mozambique"
 
     df_cntry <- df_ovc_cov %>%
         filter(operatingunit == cname)
@@ -253,7 +244,9 @@ get_output_name <- function(country,
                                        rep_pd = rep_pd)
 
     df_ovc_cov %>%
-        filter(proxy_coverage > 0, !str_detect(operatingunit, " Region$")) %>%
+        filter(
+            proxy_coverage > 0,
+            !str_detect(operatingunit, " Region$")) %>%
         distinct(operatingunit) %>%
         pull() %>%
         map(.x, .f = ~ viz_ovc_coverage(
@@ -275,7 +268,8 @@ get_output_name <- function(country,
                                        rep_pd = rep_pd)
 
     df_ovc_cov %>%
-        filter(proxy_coverage > 0, !str_detect(operatingunit, " Region$")) %>%
+        filter(proxy_coverage > 0,
+               !str_detect(operatingunit, " Region$")) %>%
         distinct(operatingunit) %>%
         pull() %>%
         map(.x, .f = ~ viz_ovc_coverage(
@@ -301,7 +295,6 @@ get_output_name <- function(country,
                !str_detect(operatingunit, " Region$")) %>%
         distinct(operatingunit) %>%
         pull() %>%
-        #nth(8) %>%
         map(.x, .f = ~ viz_ovc_coverage(
             spdf = spdf_pepfar,
             df_ovc = df_ovc_cov,
@@ -341,7 +334,7 @@ get_output_name <- function(country,
     ## OVC x TX Overlap
 
     df_ovc_tx <- extract_ovc_tx_overlap(df_msd = df_psnu,
-                                        rep_fy = rep_fy + 1,
+                                        rep_fy = rep_fy,
                                         rep_agency = rep_agencies)
 
     ## Test countries viz
@@ -357,7 +350,7 @@ get_output_name <- function(country,
         distinct(operatingunit) %>%
         pull()
 
-    cname <- cntries %>% nth(2)
+    cname <- cntries %>% nth(20)
 
     df_cntry <- df_ovc_tx %>%
         filter(operatingunit == cname)
@@ -373,8 +366,8 @@ get_output_name <- function(country,
                        terr_raster = terr)
 
     ovctx_caption <- paste0(
-        "OHA/SIEI - Data Source: FY20Q4i MSD - USAID & CDC,
-            OVC_SERV_UNDER_18 & TX_CURR, Age < 20\n",
+        "OHA/SIEI - Data Source: FY21Q2i MSD - USAID & CDC,
+                OVC_SERV_UNDER_18 & TX_CURR, Age < 20\n",
         toupper(cntries %>% nth(1)), ", Produced on ",
         format(Sys.Date(), "%Y%m%d")
     )
@@ -383,8 +376,7 @@ get_output_name <- function(country,
                        df_ovctx = df_cntry,
                        terr_raster = terr,
                        caption = ovctx_caption,
-                       #save = FALSE,
-                       save = TRUE,
+                       save = F,
                        filename = paste0(rep_pd, "_OVC_TX_Overlap_",
                                          toupper(cname), "_",
                                          format(Sys.Date(), "%Y%m%d"), ".png"))
@@ -392,20 +384,20 @@ get_output_name <- function(country,
     # Batch OVC/TX Coverage
     cntries %>%
         map(.x, .f = ~ viz_ovctx_coverage(
-                spdf = spdf_pepfar,
-                df_ovctx = df_ovc_tx %>% filter(operatingunit == .x),
-                terr_raster = terr,
-                caption = paste0(
-                    "OHA/SIEI - Data Source: FY20Q4i MSD - USAID & CDC,
-            OVC_SERV_UNDER_18 & TX_CURR, Age < 20\n",
-                    toupper(.x), ", Produced on ",
-                    format(Sys.Date(), "%Y%m%d")
-                ),
-                save = TRUE,
-                filename = paste0(rep_pd, "_OVC_TX_Overlap_",
-                                  toupper(.x), "_",
-                                  format(Sys.Date(), "%Y%m%d"), ".png")
-            ))
+            spdf = spdf_pepfar,
+            df_ovctx = df_ovc_tx %>% filter(operatingunit == .x),
+            terr_raster = terr,
+            caption = paste0(
+                "OHA/SIEI - Data Source: FY20Q4i MSD - USAID & CDC,
+                OVC_SERV_UNDER_18 & TX_CURR, Age < 20\n",
+                toupper(.x), ", Produced on ",
+                format(Sys.Date(), "%Y%m%d")
+            ),
+            save = TRUE,
+            filename = paste0(rep_pd, "_OVC_TX_Overlap_",
+                              toupper(.x), "_",
+                              format(Sys.Date(), "%Y%m%d"), ".png")
+        ))
 
-## END ##
+    ## END ##
 
