@@ -3,29 +3,30 @@
 ##  PURPOSE: % ompletion of primary package among those in DREAMS 13+ mo
 ##  LICENCE: MIT
 ##  DATE:    2020-09-17
-##  UPDATED: 2020-11-06
+##  UPDATED: 2020-05-27
 
-# Libraries
-library(tidyverse)
-library(sf)
-library(glitr)
-library(gisr)
-library(here)
-library(scales)
-library(patchwork)
-library(extrafont)
-library(ICPIutilities)
+# Libraries ----
 
+  library(tidyverse)
+  library(sf)
+  library(glitr)
+  library(gisr)
+  library(here)
+  library(scales)
+  library(patchwork)
+  library(extrafont)
+  library(ICPIutilities)
+  library(glue)
+  library(ggtext)
 
-# GLOBAL -------------------------------------------------
+# GLOBAL ----
 
   # Dependencies
     source("./Scripts/00_Utilities.R")
     source("./Scripts/00_Geo_Utilities.R")
     source("./Scripts/00_DREAMS_Utilities.R")
 
-  ## Directories
-
+  # Directories
     dir_data <- here("Data")
     dir_dataout <- here("Dataout")
 
@@ -37,23 +38,22 @@ library(ICPIutilities)
     dir_graphs <- here("Graphics")
 
   ## Reporting vars
-
     rep_fy <- 2021
-    rep_qtr <- 1
+    rep_qtr <- 2
     rep_pd <- paste0("FY", str_sub(rep_fy, 3, 4), "Q", rep_qtr)
     curr_pd <- paste0("qtr", rep_qtr)
     remv_pd <- paste0("qtr", 1:4)
     remv_pd <- remv_pd[!remv_pd == curr_pd]
+    msd_version <- "i"
 
   ## Output Caption
-
-    caption <- "Reporting Period: FY21Q1; Data Source: FY21Q1i MSD"
+    caption <- glue("Reporting Period: {rep_pd};",
+                    " Data Source: {rep_pd}{msd_version} MSD")
 
   ## MER Data - get the latest MSD PSNU x IM file
-
     file_psnu_im <- return_latest(
         folderpath = dir_merdata,
-        pattern = "^MER_.*_PSNU_IM_.*_20210212_v1_1.zip$",
+        pattern = "^MER_.*_PSNU_IM_.*_\\d{8}_v\\d{1}_\\d{1}.zip$",
         recursive = FALSE
       )
 
@@ -64,10 +64,19 @@ library(ICPIutilities)
       recursive = TRUE
     )
 
-    file_shp
 
 # FUNCTIONS ----------------------------------------------
 
+  #' @title Create AGYW_PREV Visuals
+  #'
+  #' @param df_agyw
+  #' @param country
+  #' @param rep_pd
+  #' @param spdf
+  #' @param terr
+  #' @param caption
+  #' @param save
+  #'
   batch_agyw_prev <-
     function(df_agyw, country, rep_pd,
              spdf, terr, caption, save = FALSE) {
@@ -87,6 +96,33 @@ library(ICPIutilities)
         stop("No valid data")
       }
 
+      # OU level summary
+      df_ou <- df %>%
+        filter(str_detect(indicator, "t.*")) %>%
+        pivot_wider(fiscal_year:shortname,
+                    names_from = "indicator",
+                    values_from = "value") %>%
+        group_by(fiscal_year, operatingunit) %>%
+        summarise(across(starts_with("t"), sum, nr.rm = TRUE)) %>%
+        ungroup() %>%
+        rowwise() %>%
+        mutate(
+          prp_leq12m = ttl_leq12m / total,
+          prp_leq12m = percent(prp_leq12m, .1),
+          prp_gt12m = ttl_gt12m / total,
+          prp_gt12m = percent(prp_gt12m, .1),
+          prp_completed = ttl_completed / total,
+          prp_completed = percent(prp_completed, .1),
+          prp_completed_gt12m = ttl_completed_gt12m / ttl_gt12m,
+          prp_completed_gt12m = percent(prp_completed_gt12m, .1)
+        ) %>%
+        ungroup()
+
+      #ou_prp_leq12m <- df_ou %>% pull(prp_leq12m)
+      ou_prp_gt12m <- df_ou %>% pull(prp_gt12m)
+      ou_prp_cgt12m <- df_ou %>% pull(prp_completed_gt12m)
+      ou_prp_complete <- df_ou %>% pull(prp_completed)
+
       # Map - % Completion 13+ Months
       map <- map_agyw_prevalence(spdf = spdf,
                                  terr = terr,
@@ -102,38 +138,33 @@ library(ICPIutilities)
       graphic <- (map + dots + bars) +
         plot_annotation(
           title = "% who completed at least primary package after being in DREAMS for 13+ months",
+          subtitle = glue("At the OU level, <span style='color:#1e87a5'>{ou_prp_gt12m}</span> are in their 13th+ months with <span style='color:#1e87a5'>{ou_prp_cgt12m}</span> (<span style='color:#212721'>{ou_prp_complete}</span> overall) completing at least the primary package"),
           caption = paste0(caption, "\n",
                            toupper(country), " - Produced on ",
                            format(Sys.Date(), "%Y%m%d"), " by OHA/SIEI")
         ) &
         theme(
-          text = element_text(family = "Gill Sans MT"),
-          plot.title = element_text(family = "Gill Sans MT",
-                                    face = 1, hjust = .5)
+          text = element_text(family = "Source Sans Pro"),
+          plot.title = element_text(family = "Source Sans Pro", hjust = .5),
+          plot.subtitle = element_markdown(family = "Source Sans Pro", hjust = .5)
         )
 
       # Save on demand
       if (save == TRUE) {
 
-        print(graphic)
-
-        ggsave(here("./Graphics",
-                    paste0(pd,
+        si_save(here("./Graphics",
+                     paste0(pd,
                            " - DREAMS_PercentCompletion_13plus_months_",
                            toupper(country), "_",
                            format(Sys.Date(), "%Y%m%d"), ".png")),
-               plot = last_plot(),
-               scale = 1.2,
-               dpi = 310,
-               width = 10,
-               height = 7,
-               units = "in")
+               plot = graphic,
+               scale = 1.2)
       }
 
       return(graphic)
     }
 
-# DATA ---------------------------------------------------
+# DATA ----
 
   # Read data
   df <- read_msd(file_psnu_im)
@@ -172,11 +203,11 @@ library(ICPIutilities)
 
   dreams_ous
 
-  cname <- dreams_ous %>% nth(14)
+  cname <- dreams_ous %>% nth(13)
 
   df_cntry <- df_agyw %>% filter(operatingunit == cname)
 
-  map <- map_agyw_prevalence(spdf, terr, df_agyw = df_cntry)
+  map <- map_agyw_prevalence(spdf_pepfar, terr, df_agyw = df_cntry)
 
   dots <- plot_agyw_prevalence(df_agyw = df_cntry, type = "dots")
 
@@ -188,8 +219,8 @@ library(ICPIutilities)
       caption = caption
     ) &
     theme(
-      text = element_text(family = "Gill Sans MT"),
-      plot.title = element_text(family = "Gill Sans MT",
+      text = element_text(family = "Source Sans Pro"),
+      plot.title = element_text(family = "Source Sans Pro",
                                 face = 1, hjust = .5))
 
   # Batch
@@ -197,7 +228,7 @@ library(ICPIutilities)
     map(.x, .f = ~ batch_agyw_prev(df_agyw = df_agyw,
                                    country = .x,
                                    rep_pd = rep_pd,
-                                   spdf = spdf,
+                                   spdf = spdf_pepfar,
                                    terr = terr,
                                    caption = caption,
                                    save = TRUE))

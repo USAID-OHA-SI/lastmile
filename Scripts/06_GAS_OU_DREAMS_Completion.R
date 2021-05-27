@@ -3,50 +3,44 @@
 ##  PURPOSE: % ompletion of primary package among those in DREAMS 13+ mo
 ##  LICENCE: MIT
 ##  DATE:    2020-09-17
-##  UPDATED: 2020-11-06
+##  UPDATED: 2020-05-27
 
-# Libraries
-library(extrafont)
-library(tidyverse)
-library(sf)
-library(glitr)
-library(gisr)
-library(here)
-library(scales)
-library(patchwork)
-library(ICPIutilities)
+# Libraries ----
 
-# Dependencies
-source("./Scripts/00_Geo_Utilities.R")
-source("./Scripts/00_DREAMS_Utilities.R")
+  library(extrafont)
+  library(tidyverse)
+  library(sf)
+  library(glitr)
+  library(gisr)
+  library(here)
+  library(scales)
+  library(patchwork)
+  library(ICPIutilities)
 
-# Globals
-# Globals
-dir_data <- here("Data")
-dir_dataout <- here("Dataout")
+# Dependencies ----
 
-dir_geo <- "C:/Users/gsarfaty/Documents/GIS/DATA/Boundaries"
-dir_terr <- "C:/Users/gsarfaty/Documents/GIS/DATA/Topography"
-dir_merdata <- "C:/Users/gsarfaty/Documents/DATIM"
-
-dir_img <- here("Images")
-dir_graphs <- here("Graphics")
-
-# Update paths
-source("../_setup/00_Setup.R")
+  source("./Scripts/00_Geo_Utilities.R")
+  source("./Scripts/00_DREAMS_Utilities.R")
 
 
-# MER Data - get the latest MSD PSNU x IM file
-# This should return
-# Q3 file => MER_Structured_Datasets_PSNU_IM_FY18-21_20200918_v2_1.zip
-file_psnu_im <- list.files(
-    path = dir_merdata,
-    pattern = "Structured_.*_PSNU_IM_.*_\\d{8}_v.*.zip",
-    recursive = FALSE,
-    full.names = TRUE
-  ) %>%
-  sort() %>%
-  last()
+# Globals ----
+
+  dir_data <- here("Data")
+  dir_dataout <- here("Dataout")
+  dir_img <- here("Images")
+  dir_graphs <- here("Graphics")
+
+  dir_geo <- si_path("path_vector")
+  dir_terr <- si_path("path_raster")
+  dir_merdata <- si_path("path_msd")
+
+
+  # MER Data - get the latest MSD PSNU x IM file
+  file_psnu_im <- return_latest(
+    folderpath = dir_merdata,
+    pattern = "^MER_.*_PSNU_IM_.*_\\d{8}_v1_1.zip$",
+    recursive = FALSE
+  )
 
 # Read data
 df <- read_msd(file_psnu_im)

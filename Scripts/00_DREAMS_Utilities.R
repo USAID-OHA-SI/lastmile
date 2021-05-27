@@ -4,7 +4,7 @@
 ##  PURPOSE: OVC Data Utilities
 ##  LICENCE: MIT
 ##  DATE:    2020-11-06
-##  UPDATED: 2021-03-02
+##  UPDATED: 2021-05-27
 
 
 #' @title Extract DREAMS data
@@ -19,7 +19,7 @@
 extract_agyw_prevalence <-
   function(df_msd,
            country = NULL,
-           rep_fy = 2020,
+           rep_fy = 2021,
            rep_qtr = 2){
 
     # Params
@@ -60,10 +60,9 @@ extract_agyw_prevalence <-
           time_dreams %in% c("13-24 Months in DREAMS",
                              "25+ Months in DREAMS") ~ "gt12m"),
         completion = case_when(
-          completion %in% c("DREAMS Fully Completed",
-                            "DREAMS Fully Completed and Secondary") ~ "completed",
-          completion %in% c("DREAMS Not Completed",
-                            "DREAMS Only Secondary Completed") ~ "incomplete")
+          completion %in% c("Primary Package Completed",
+                            "Primary Package Completed and Secondary") ~ "completed",
+          completion %in% c("Primary Package Incomplete") ~ "incomplete")
       ) %>%
       group_by(fiscal_year, operatingunit, snu1, psnuuid, psnu, shortname,
                indicator, completion, time_dreams) %>%
@@ -77,6 +76,10 @@ extract_agyw_prevalence <-
         prp_leq12m = ttl_leq12m / total,
         ttl_gt12m = sum({{sym_curr_pd}}[time_dreams == "gt12m"], na.rm = TRUE),
         prp_gt12m = ttl_gt12m / total,
+        ttl_completed = sum(
+          {{sym_curr_pd}}[completion == "completed"],
+          na.rm = TRUE),
+        prp_completed = ttl_completed / total,
         ttl_completed_gt12m = sum(
           {{sym_curr_pd}}[time_dreams == "gt12m" & completion == "completed"],
           na.rm = TRUE),
@@ -106,10 +109,6 @@ map_agyw_prevalence <-
            orglevel = "PSNU",
            facet = FALSE) {
 
-    # Reshape data for maps
-    # df_agyw <- df_agyw %>%
-    #   spread(indicator, value)
-
     # Identify Country/OU
     country <- df_agyw %>%
       dplyr::distinct(operatingunit) %>%
@@ -117,20 +116,24 @@ map_agyw_prevalence <-
 
     # Geodata
     spdf_adm0 <- spdf %>%
-      filter(operatingunit %in% country, type == "OU")
+      filter(operatingunit %in% country, label == "country")
 
+    spdf_adm1 <- spdf %>%
+      filter(operatingunit %in% country, label == "snu1")
+
+    # Basemap
+    basemap <- terrain_map(countries = lookup_country(country),
+                           adm0 = spdf_adm0,
+                           adm1 = spdf_adm1,
+                           mask = TRUE,
+                           terr = terr)
+    # spdf agyw
     df_agyw <- spdf %>%
-      #filter(operatingunit %in% country, type == orglevel) %>%
       left_join(df_agyw, by = c("uid" = "psnuuid")) %>%
       filter(indicator == "prp_completed_gt12m", !is.na(value))
 
     # Map
-    agyw_map <- get_basemap(
-        spdf = spdf,
-        cntry = country,
-        terr_raster = terr,
-        add_admins = TRUE
-      ) +
+    agyw_map <- basemap +
       geom_sf(
         data = df_agyw,
         aes(fill = value),
@@ -139,17 +142,22 @@ map_agyw_prevalence <-
       geom_sf(
         data = spdf_adm0,
         fill = NA,
-        lwd = .2,
-        color = grey30k) +
-      scale_fill_viridis_c(option = "magma",
-                           direction = -1,
-                           labels = percent_format(accuracy = 1)) +
-      #ggtitle("% who completed at least primary package\nafter being in DREAMS for 13+ months") +
-      labs(subtitle = "% who completed at least primary package")
+        lwd = 2,
+        color = grey10k) +
+      geom_sf(
+        data = spdf_adm0,
+        fill = NA,
+        lwd = .75,
+        color = grey90k) +
+      scale_fill_si(palette = "scooters",
+                    discrete = FALSE,
+                    labels = percent_format(accuracy = 1),
+                    limits = c(0, 1)) +
+      labs(subtitle = "% who completed at least primary package") +
       si_style_map() +
       theme(
         legend.position =  "bottom",
-        legend.key.width = ggplot2::unit(1, "cm"),
+        legend.key.width = ggplot2::unit(1.5, "cm"),
         legend.key.height = ggplot2::unit(.5, "cm")
       )
 
@@ -166,43 +174,46 @@ map_agyw_prevalence <-
 plot_agyw_prevalence <-
   function(df_agyw, type = "bars") {
 
-    # dot-plot
-    plot <- df_agyw %>%
-      filter(indicator %in% c("ttl_gt12m", "prp_completed_gt12m")) %>%
-      spread(indicator, value) %>%
-      mutate(label = paste0(shortname, " (", comma(ttl_gt12m, 1), ")")) %>%
-      ggplot(aes(x = reorder(label, prp_completed_gt12m),
-                 y = prp_completed_gt12m)) +
-      geom_point(aes(size = prp_completed_gt12m,
-                     fill = prp_completed_gt12m),
-                 color = grey50k,
-                 shape = 21,
-                 show.legend = F) +
-      scale_size_continuous(range = c(3, 12)) +
-      scale_color_viridis_c(option = "magma",
-                            direction = -1,
-                            aesthetics = c("fill")) +
-      scale_y_continuous(position = "right",
-                         labels = percent,
-                         limits = c(0, 1),
-                         #breaks = seq(0, 1, 0.25)) +
-                         breaks = c(0, .25, .5, .75, .9, 1)) +
-      geom_hline(aes(yintercept = .9),
-                 color = "gray70",
-                 size = .7,
-                 linetype = "dashed",
-                 alpha = .8) +
-      labs(subtitle = "% who completed at least primary package",
-           x = "", y = "") +
-      coord_flip() +
-      si_style_xgrid() +
-      theme(
-        axis.text.x = element_text(size = 6)
-      )
-      #ggtitle("% who completed at least primary package\nafter being in DREAMS for 13+ months")
+    if (type == "dots") {
+      # dot-plot
+      plot <- df_agyw %>%
+        filter(indicator %in% c("ttl_gt12m", "prp_completed_gt12m")) %>%
+        spread(indicator, value) %>%
+        mutate(label = paste0(shortname, " (", comma(ttl_gt12m, 1), ")")) %>%
+        ggplot(aes(x = reorder(label, prp_completed_gt12m),
+                   y = prp_completed_gt12m)) +
+        geom_point(aes(size = prp_completed_gt12m,
+                       fill = prp_completed_gt12m),
+                   color = grey50k,
+                   shape = 21,
+                   show.legend = F) +
+        scale_size_continuous(range = c(3, 12)) +
+        scale_fill_si(palette = "scooters",
+                      discrete = FALSE,
+                      labels = percent_format(accuracy = 1),
+                      limits = c(0, 1)) +
+        scale_y_continuous(position = "right",
+                           labels = percent,
+                           limits = c(0, 1),
+                           #breaks = seq(0, 1, 0.25)) +
+                           breaks = c(0, .25, .5, .75, .9, 1)) +
+        geom_hline(aes(yintercept = .9),
+                   color = grey70k,
+                   size = .7,
+                   linetype = "dashed",
+                   alpha = .8) +
+        labs(subtitle = "% who completed at least primary package",
+             x = "", y = "") +
+        coord_flip() +
+        si_style_xgrid() +
+        theme(
+          axis.text.x = element_text(size = 6)
+        )
 
-    # Bar charts (overwrite previous)
-    if (type == "bars") {
+      return(plot)
+
+    } else if (type == "bars") {
+      # Bar charts
 
       # Reshape data
       df_agyw <- df_agyw %>%
@@ -213,21 +224,23 @@ plot_agyw_prevalence <-
       # Plot
       plot <-  df_agyw %>%
         ggplot(aes(x = reorder(label, prp_completed_gt12m))) +
-        geom_bar(stat = "identity", aes(y = 1), fill = grey20k) +
-        geom_bar(stat = "identity", aes(y = prp_gt12m), fill = grey40k) +
+        geom_bar(stat = "identity", aes(y = 1), fill = grey10k) +
+        geom_bar(stat = "identity", aes(y = prp_gt12m), fill = scooter) +
         scale_fill_manual(values = c(grey20k, grey40k)) +
         geom_text(aes(y = prp_gt12m, label = paste0(" ", percent(prp_gt12m, 1))),
                   position = position_stack(vjust = 1),
                   hjust = "inward",
-                  color = glitr::grey80k, #"white",
+                  color = glitr::grey80k,
                   size = 4) +
         coord_flip() +
-        labs(#title = "% in DREAMS 13+ months out of \n total beneficaries",
-             subtitle = "% in DREAMS 13+ months",
+        labs(subtitle = "% in DREAMS 13+ months",
              x = "", y = "") +
         si_style_nolines() +
         theme(legend.position = "none", axis.text.x = element_blank())
-    }
 
-    return(plot)
+      return(plot)
+
+    } else {
+      stop(glue("Invalid plot type: {type}"))
+    }
   }
