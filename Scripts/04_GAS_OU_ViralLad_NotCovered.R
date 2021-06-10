@@ -199,8 +199,6 @@ df_psnu <- read_msd(file_psnu_im)
 
 df_psnu %>% glimpse()
 
-df_psnu %>% prinf()
-
 ## MER Data Munging
 
 ## Filter & Summarize
@@ -270,7 +268,7 @@ df_tx_bad %>%
 
 ## Test Individual VL maps
 
-cname <- "Zambia"
+cname <- "Nigeria"
 
 map_viralload(
   spdf = spdf_pepfar,
@@ -281,6 +279,31 @@ map_viralload(
   agency = T,
   facet_rows = 2
 )
+
+# Nigeria's request
+# map_viralload(
+#   spdf = spdf_pepfar,
+#   df = df_vl,
+#   vl_variable = "VLS",
+#   cntry = cname,
+#   terr_raster = terr,
+#   agency = T,
+#   save = T,
+#   facet_rows = 2,
+#   add_labels = TRUE
+# )
+#
+# map_viralload(
+#   spdf = spdf_pepfar,
+#   df = df_vl,
+#   vl_variable = "VLC",
+#   cntry = cname,
+#   terr_raster = terr,
+#   agency = T,
+#   save = T,
+#   facet_rows = 2,
+#   add_labels = TRUE
+# )
 
 
 # PEDS Test
@@ -359,6 +382,20 @@ map_ous %>%
       facet_rows = 2
     )
   )
+
+# For Nigeria only
+# map_ous %>%
+#   nth(13) %>%
+#   map(.x, .f = ~ map_viralloads(
+#     spdf = spdf_pepfar,
+#     df = df_vl,
+#     cntry = .x,
+#     terr_raster = terr,
+#     save = TRUE,
+#     agency = TRUE,
+#     facet_rows = 2,
+#     add_labels = TRUE)
+#   )
 
 ## Batch: ALL USAID Only
 map_ous <- df_vl %>%

@@ -365,16 +365,14 @@ extract_vls_tld <-
 #' @return ggplot plot of the map
 #'
 map_viralload <-
-  function(spdf,
-           df,
-           vl_variable,
-           cntry,
-           terr_raster,
+  function(spdf, df, vl_variable,
+           cntry, terr_raster,
            peds = FALSE,
            caption = TRUE,
            save = FALSE,
            agency = TRUE,
-           facet_rows = 1) {
+           facet_rows = 1,
+           add_labels = FALSE) {
 
     # Variables
     df_geo <- {{spdf}}
@@ -431,8 +429,7 @@ map_viralload <-
             VLS > 0.8 & VLS <= 0.9 ~ burnt_sienna_light,
             VLS > 0.9 & VLS <= 1.0 ~ scooter,
             VLS > 1 ~ trolley_grey_light),
-          VLS_color = factor(VLS_color, levels = colors)
-          )
+          VLS_color = factor(VLS_color, levels = colors))
 
       # Map
       theme_map <- base_map +
@@ -447,6 +444,14 @@ map_viralload <-
           labels = labels,
           guide = guide_legend(label.position = "bottom")
         )
+
+      # Add labels
+      if (add_labels == TRUE) {
+        theme_map <- theme_map +
+          geom_sf_text(data = df_geo2,
+                       aes(label = paste0(psnu, "\n", percent(VLS, 1))),
+                       size = 2, color = grey80k)
+      }
 
     }
     else if (tolower(vl_var) == "vlc") {
@@ -466,6 +471,15 @@ map_viralload <-
           limits = c(0, 1),
           labels = percent
         )
+
+      # Add labels
+      if (add_labels == TRUE) {
+        theme_map <- theme_map +
+          geom_sf_text(data = df_geo2,
+                       aes(label = paste0(psnu, "\n", percent(VLC, 1))),
+                       size = 2, color = grey30k)
+      }
+
     }
     else {
       theme_map <- base_map +
@@ -484,6 +498,14 @@ map_viralload <-
           limits = c(0, 1),
           labels = percent
         )
+
+      # Add labels
+      if (add_labels == TRUE) {
+        theme_map <- theme_map +
+          geom_sf_text(data = df_geo2,
+                       aes(label = paste0(psnu, "\n", percent(VLnC, 1))),
+                       size = 2, color = grey80k)
+      }
     }
 
     # Check
@@ -497,9 +519,15 @@ map_viralload <-
     theme_map <- theme_map +
       geom_sf(
         data = df_geo0,
+        colour = grey10k,
+        fill = NA,
+        size = 1.5
+      ) +
+      geom_sf(
+        data = df_geo0,
         colour = grey90k,
         fill = NA,
-        size = 1
+        size = 0.5
       ) +
       si_style_map()
 
@@ -519,9 +547,9 @@ map_viralload <-
     # Update legend size and position
     theme_map <- theme_map +
       theme(
-        plot.title = element_text(family = "Source Sans Pro", size = 14),
-        plot.subtitle = element_text(family = "Source Sans Pro", size = 12),
-        plot.caption = element_text(family = "Source Sans Pro", size = 8),
+        plot.title = element_text(family = "Source Sans Pro", size = 10),
+        plot.subtitle = element_text(family = "Source Sans Pro", size = 8),
+        plot.caption = element_text(family = "Source Sans Pro", size = 5),
         legend.position =  "bottom",
         legend.direction = "horizontal",
         legend.key.width = ggplot2::unit(1.5, "cm"),
@@ -530,9 +558,6 @@ map_viralload <-
 
     # Save map
     if (save == TRUE) {
-
-      #print(theme_map)
-
       si_save(
         here::here("Graphics", get_output_name(country, rep_pd = pd, var = vl_var)),
         plot = theme_map
@@ -560,7 +585,8 @@ map_viralloads <-
            terr_raster,
            save = FALSE,
            agency = TRUE,
-           facet_rows = 1) {
+           facet_rows = 1,
+           add_labels = FALSE) {
 
     # Variables
     df_geo <- {{spdf}}
@@ -592,7 +618,8 @@ map_viralloads <-
       terr_raster = terr,
       caption = FALSE,
       agency = agency,
-      facet_rows = facets
+      facet_rows = facets,
+      add_labels = add_labels
     )
 
     # VLC
@@ -604,7 +631,8 @@ map_viralloads <-
       terr_raster = terr,
       caption = FALSE,
       agency = agency,
-      facet_rows = facets
+      facet_rows = facets,
+      add_labels = add_labels
     )
 
     # VLnC
@@ -616,7 +644,8 @@ map_viralloads <-
       terr_raster = terr,
       caption = FALSE,
       agency = agency,
-      facet_rows = facets
+      facet_rows = facets,
+      add_labels = add_labels
     )
 
     # ALL
