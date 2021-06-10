@@ -42,7 +42,19 @@
   rep_agencies <- c("USAID", "HHS/CDC")
 
   rep_fy = 2021
-  rep_qtr = 1
+  rep_qtr = 2
+
+  rep_fy2 = rep_fy %>%
+    as.character() %>%
+    str_sub(3,4) %>%
+    paste0("FY", .)
+
+  rep_fys = c(rep_fy - 1, rep_fy)
+
+  rep_fys2 = rep_fys %>%
+    as.character() %>%
+    str_sub(3,4) %>%
+    paste0("FY", .)
 
   rep_pd = rep_fy %>%
     as.character() %>%
@@ -78,10 +90,12 @@
   #' @param spdf     PEPFAR Polygons
   #' @param terr     Terrain Raster
   #' @param country  Ou / Country name
+  #' @param rep_pd   Reporting Period
   #'
   vlc_map <-
     function(spdf_vl, spdf,
              terr, country,
+             rep_pd = "FY21Q2",
              lbl_size = 3,
              add_caption = TRUE) {
 
@@ -132,15 +146,15 @@
               colour = grey90k,
               fill = NA,
               size = .3) +
-      # geom_sf_text(data = spdf_art,
-      #              aes(label = paste0(psnu, "\n", percent(ART_SAT, 1))),
-      #              size = lbl_size,
-      #              color = grey10k) +
-      geom_sf_text(data = spdf_vl %>%
-                     filter(VLC >= .9),
-                   aes(label = percent(VLC, 1)),
+      geom_sf_text(data = spdf_vl,
+                   aes(label = paste0(psnu, "\n", percent(VLC, 1))),
                    size = lbl_size,
                    color = grey10k)
+      # geom_sf_text(data = spdf_vl %>%
+      #                filter(VLC >= .9),
+      #              aes(label = percent(VLC, 1)),
+      #              size = lbl_size,
+      #              color = grey10k)
 
     # Add caption
     if (add_caption == TRUE) {
@@ -149,18 +163,18 @@
         labs(
           #title = "ART SATUTATION IN USAID SUPPORTED PSNUs",
           #subtitle = "PSNUs with labelled",
-          caption = paste0("FY21Q1 VLC = TX_PVLS_D / lag(TX_CURR, 2)",
-                           "\nSource: FY21Q1i PSNU x IM MSDs, Produced on ",
+          caption = paste0(glue("{rep_pd} VLC = TX_PVLS_D / lag(TX_CURR, 2)\nVLC Change = VLC({rep_pd}) - VLC(FY20Q4)\nSource: {rep_pd} PSNU x IM MSDs, Produced on "),
                            format(Sys.Date(), "%Y-%m-%d")))
 
       }
 
     # Add theme
     map <- map +
-      si_style_map()
+      si_style_map() +
+      theme(plot.caption = element_text(size = 6, family = "Source Sans Pro"))
 
     return(map)
-    }
+  }
 
 
   #' VLC Change
@@ -179,16 +193,18 @@
       geom_hline(yintercept = .9,
                  lty = "dashed", lwd = 1,
                  color = usaid_darkgrey) +
-      geom_segment(aes(xend = label, y = VLC_Prev,
-                       yend = VLC, color = change_color),
+      geom_segment(aes(xend = label,
+                       y = VLC_Prev, yend = VLC,
+                       color = change_color),
                    size = 1, alpha = .7) +
+      geom_point(aes(y = VLC_Prev),
+                 shape = 21, fill = grey50k,
+                 size = 4 ,
+                 color = grey10k) +
       geom_point(aes(y = VLC, fill = VLC),
                  shape = 21, size = 5,
                  color = grey10k,
                  show.legend = F) +
-      geom_point(aes(y = VLC_Prev), shape = 20,
-                 size = 3 , alpha = .7,
-                 color = usaid_red) +
       scale_fill_si(
         palette = "genoas",
         discrete = FALSE,
@@ -198,7 +214,7 @@
       scale_color_identity() +
       coord_flip() +
       labs(x = "", y = "") +
-      si_style_xgrid()
+      si_style()
 
     return(viz)
   }
@@ -235,13 +251,12 @@
   # TX Viral Load
   df_vl <- df_psnu %>%
     filter(
-      fiscal_year %in% c(2020, 2021), # Needed for Q1 vl
+      fiscal_year %in% rep_fys, # Needed for Q1 vl
       str_to_lower(fundingagency) != "dedup",
-      #fundingagency == 'USAID',
+      fundingagency == 'USAID',
       indicator %in% c("TX_PVLS", "TX_CURR"),
       standardizeddisaggregate %in% c("Total Numerator", "Total Denominator")
     ) %>%
-    rename(countryname = countrynamename) %>%
     mutate(
       indicator = if_else(
         indicator == "TX_PVLS" & numeratordenom == "D",
@@ -265,7 +280,7 @@
     group_by(fundingagency, operatingunit, countryname, snu1, psnuuid, psnu) %>%
     mutate(VLC = TX_PVLS_D / lag(TX_CURR, 2, order_by = period),
            VLC_Prev = lag(VLC, 1, order_by = period),
-           VLC_Diff = VLC - lag(VLC, 1, order_by = period)) %>%
+           VLC_Diff = VLC - lag(VLC, 2, order_by = period)) %>%
     ungroup() %>%
     mutate(
       VLS = (TX_PVLS / TX_PVLS_D) * VLC,
@@ -276,13 +291,11 @@
       fiscal_year = str_sub(period, 1, 4)
     ) %>%
     relocate(fiscal_year, .before = period) %>%
-    filter(period == "FY21Q1") %>%
+    filter(period == rep_pd) %>%
     clean_psnu()
 
   # Check
-  df_vl %>%
-    filter(operatingunit == "Nigeria") %>%
-    view()
+  df_vl %>% filter(operatingunit == "Nigeria")
 
   # Join to spatial file
   spdf_vl <- spdf_pepfar %>%
@@ -303,10 +316,11 @@
     pull()
 
   # maps for Pre-POART Slide deck
-  c("Nigeria", "Uganda", "Zambia", "Tanzania") %>%
+  #c("Nigeria", "Uganda", "Zambia", "Tanzania") %>%
   #c("Uganda") %>%
   #c("Tanzania") %>%
   #c("Zambia") %>%
+  c("Nigeria") %>%
     map(function(cntry) {
 
       # Data
@@ -322,28 +336,77 @@
                          lbl_size = 2)
 
       # change plot => only show psnu with negative change
-      #vlc_ch <- vlc_change(spdf_vl = spdf_vl_cntry, country = cntry)
-      vlc_ch <- vlc_change(spdf_vl = spdf_vl_cntry %>%
-                             filter(VLC_Diff < 0),
-                           country = cntry)
+      vlc_ch <- vlc_change(spdf_vl = spdf_vl_cntry, country = cntry)
+      # vlc_ch <- vlc_change(spdf_vl = spdf_vl_cntry %>%
+      #                        filter(VLC_Diff < 0),
+      #                      country = cntry)
 
       # viz
       vlc_plot <- (vlc_map + vlc_ch) +
-        theme(axis.text.x = element_text(family = "Source Sans Pro"),
+        plot_annotation(
+          title = "NIGERIA - FY20Q2 Virial Load Coverage",
+          subtitle = "Significant increas in VLC between <span style='color:#939598;'>**FY20Q4**</span> and <span style='color:#287c6f'>**FY21Q2**</span> in most states<br/>States are sorted by FY21Q2 % VL Coverage",
+          theme = theme(
+              axis.text.x = element_text(size = 5, family = "Source Sans Pro"),
+              axis.text.y = element_text(size = 6, family = "Source Sans Pro"),
+              plot.title = element_text(size = 10, family = "Source Sans Pro", hjust = .5),
+              plot.subtitle = element_markdown(size = 8,  family = "Source Sans Pro", hjust = .5),
               plot.caption = element_text(hjust = .5, family = "Source Sans Pro")
+          )
         )
+
+      print(vlc_plot)
+
+      # Both
+      si_save(
+        filename = file.path(
+          dir_graphics,
+          glue("{rep_pd} - {str_to_upper(cntry)} - TX VLC Change - {format(Sys.Date(), '%Y%m%d')}.png")),
+        plot = vlc_plot,
+        width = 10,
+        height = 5)
 
       si_save(
         filename = file.path(
           dir_graphics,
-          paste0("FY21Q1 - ",
-                 str_to_upper(cntry),
-                 " - TX VLC Change - ",
-                 format(Sys.Date(), "%Y%m%d"),
-                 ".png")),
+          glue("{rep_pd} - {str_to_upper(cntry)} - TX VLC Change - {format(Sys.Date(), '%Y%m%d')}.svg")),
         plot = vlc_plot,
         width = 10,
         height = 5)
+
+      # Map only
+      # si_save(
+      #   filename = file.path(
+      #     dir_graphics,
+      #     glue("{rep_pd} - {str_to_upper(cntry)} - TX VLC Change Map - {format(Sys.Date(), '%Y%m%d')}.png")),
+      #   plot = vlc_map,
+      #   width = 7,
+      #   height = 7)
+      #
+      # si_save(
+      #   filename = file.path(
+      #     dir_graphics,
+      #     glue("{rep_pd} - {str_to_upper(cntry)} - TX VLC Change Map - {format(Sys.Date(), '%Y%m%d')}.svg")),
+      #   plot = vlc_map,
+      #   width = 7,
+      #   height = 7)
+
+      # Plot only
+      # si_save(
+      #   filename = file.path(
+      #     dir_graphics,
+      #     glue("{rep_pd} - {str_to_upper(cntry)} - TX VLC Change plot - {format(Sys.Date(), '%Y%m%d')}.png")),
+      #   plot = vlc_ch,
+      #   width = 10,
+      #   height = 7)
+      #
+      # si_save(
+      #   filename = file.path(
+      #     dir_graphics,
+      #     glue("{rep_pd} - {str_to_upper(cntry)} - TX VLC Change plot - {format(Sys.Date(), '%Y%m%d')}.svg")),
+      #   plot = vlc_ch,
+      #   width = 10,
+      #   height = 7)
 
       return(cntry)
     })
