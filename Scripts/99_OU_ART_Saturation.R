@@ -3,7 +3,7 @@
 ##  PURPOSE: ART Suturation by OU
 ##  LICENCE: MIT
 ##  DATE:    2021-03-02
-##  UPDATE:  2021-06-09
+##  UPDATE:  2021-06-14
 
 
 # DEPENDENCIES ------------------------------------------------------------
@@ -62,6 +62,14 @@
     as.character() %>%
     str_sub(3,4) %>%
     paste0("FY", ., "Q", rep_qtr)
+
+  rep_ref_pd = rep_fys %>%
+    first() %>%
+    as.character() %>%
+    str_sub(3,4) %>%
+    paste0("FY", ., "Q4")
+
+  rep_pds <- c(rep_ref_pd, rep_pd)
 
   # MER Data - get the latest MSD PSNU x IM file
   file_psnu_im <- return_latest(
@@ -224,7 +232,7 @@
   df_nat %>% glimpse()
 
   df_nat %>%
-    filter(fiscal_year %in% c("2020", "2021"),
+    filter(fiscal_year %in% rep_fys,
            indicator %in% c("PLHIV", "TX_CURR_SUBNAT")) %>%
     select(fiscal_year, indicator, standardizeddisaggregate) %>%
     distinct(fiscal_year, indicator, standardizeddisaggregate)
@@ -305,34 +313,34 @@
 
   # Deal with NGA Case: TX_CURR_NAT is lower that TX_CURR
   df_psnu_tx <- df_psnu %>%
-    filter(fiscal_year == rep_fy,
+    filter(fiscal_year %in% rep_fys,
            indicator == "TX_CURR",
            standardizeddisaggregate == "Total Numerator",
            fundingagency != "Dedup") %>%
     reshape_msd(clean = TRUE) %>%
-    filter(period_type == "results",
-           period == rep_pd)
+    filter(period_type == "results", period %in% rep_pds)
 
   df_psnu_tx %>% glimpse()
 
 
   df_tx2 <- df_psnu_tx %>%
-    group_by(operatingunit, countryname, snu1, psnuuid, psnu, indicator) %>%
+    group_by(period, operatingunit, countryname, snu1, psnuuid, psnu, indicator) %>%
     summarise_at(vars(value), sum, na.rm = TRUE) %>%
     ungroup() %>%
+    mutate(period2 = str_sub(period, 1, 4)) %>%
     pivot_wider(names_from = indicator, values_from = value) %>%
-    left_join(df_plhiv %>% filter(period == rep_fy2),
+    left_join(df_plhiv,
               by = c("operatingunit", "countryname",
-                     "snu1", "psnuuid", "psnu")) %>%
+                     "snu1", "psnuuid", "psnu", "period2" = "period")) %>%
     rowwise() %>%
     mutate(ART_SAT = if_else(operatingunit == "Nigeria",
                              TX_CURR / PLHIV,
                              TX_CURR_SUBNAT / PLHIV)) %>%
     ungroup() %>%
-    filter(period == rep_fy2) %>%
     left_join(df_tx_locs, by = c("operatingunit", "psnuuid"))
 
   df_tx2 %>% glimpse()
+
 
   # Join to spatial file
   spdf_tx <- spdf_pepfar %>%
@@ -415,7 +423,17 @@
 
   cntry = "Nigeria"
 
-  spdf_tx_nga <- spdf_tx %>% filter(operatingunit == cntry)
+  spdf_tx_nga <- spdf_tx2 %>%
+    filter(operatingunit == cntry,
+           period2 == rep_fy2)
+
+  # ART Sat trend
+  df_tx3 <- df_tx2 %>%
+    filter(operatingunit == cntry, usaid_flag == rep_agency) %>%
+    select(period, psnu, art_sat = ART_SAT) %>%
+    pivot_wider(names_from = period, values_from = art_sat) %>%
+    mutate(psnu = paste0(psnu, " (", percent(FY21Q2, 1), ")"),
+           change_color = if_else(FY21Q2 - FY20Q4 > 0, burnt_sienna, usaid_red))
 
   # map
   nga_map <- art_saturation_map(spdf_art = spdf_tx_nga,
@@ -425,6 +443,15 @@
                             rep_pd = rep_pd,
                             full_label = TRUE,
                             lbl_size = 1.5)
+
+  nga_usaid_map <- art_saturation_map(spdf_art = spdf_tx_nga %>%
+                                        filter(usaid_flag == "USAID"),
+                                spdf = spdf_pepfar,
+                                terr = terr,
+                                country = "Nigeria",
+                                rep_pd = rep_pd,
+                                full_label = TRUE,
+                                lbl_size = 1.5)
 
   # bar chart
   max_art <- spdf_tx_nga %>%
@@ -478,7 +505,45 @@
     si_style_xgrid() +
     theme(axis.text = element_text(size = 5))
 
-  # Map + plot
+  # Change plot
+  nga_dots <- df_tx3 %>%
+    ggplot(aes(x = reorder(psnu, FY21Q2),
+               y = FY21Q2)) +
+      geom_hline(yintercept = .9,
+                 lty = "dashed", lwd = 1,
+                 color = usaid_darkgrey) +
+      geom_segment(aes(xend = psnu,
+                       y = FY20Q4,
+                       yend = FY21Q2,
+                       color = FY21Q2),
+                   size = 1, alpha = .7,
+                   show.legend = FALSE) +
+      geom_point(aes(y = FY20Q4),
+                 shape = 21,
+                 fill = grey50k,
+                 size = 4 ,
+                 color = grey10k) +
+      geom_point(aes(y = FY21Q2, fill = FY21Q2),
+                 shape = 21, size = 5,
+                 color = grey10k,
+                 show.legend = F) +
+      scale_fill_si(
+        palette = "burnt_siennas",
+        discrete = FALSE,
+        alpha = 1,
+        breaks = c(.25, .5, .75, 1)
+      ) +
+      scale_color_si(
+        palette = "burnt_siennas",
+        discrete = FALSE
+      ) +
+      scale_y_continuous(labels = percent, position = "right") +
+      #scale_color_identity() +
+      coord_flip() +
+      labs(x = "", y = "") +
+      si_style()
+
+  # Map + bar plot
   nga_plot <- (nga_map + nga_bar)
 
   si_save(
@@ -487,12 +552,16 @@
       paste0(rep_pd, " - ",
              str_to_upper(cntry),
              " - ", rep_agency,
-             " - ART Saturation 2 - ",
+             " - ART Saturation MapOU and BarsUSAID - ",
              format(Sys.Date(), "%Y%m%d"),
              ".png")),
     plot = nga_plot,
     width = 10,
     height = 5)
+
+  # USAID only - Map + bar plot
+  nga_usaid_plot <- (nga_usaid_map + nga_bar) &
+    theme(plot.caption = element_blank())
 
   si_save(
     filename = file.path(
@@ -500,10 +569,34 @@
       paste0(rep_pd, " - ",
              str_to_upper(cntry),
              " - ", rep_agency,
-             " - ART Saturation 3 - ",
+             " - ART Saturation MapUSAID_and_BarsUSAID - ",
              format(Sys.Date(), "%Y%m%d"),
-             ".svg")),
-    plot = nga_plot,
+             ".png")),
+    plot = nga_usaid_plot,
+    width = 10,
+    height = 5)
+
+
+  # USAID only - Map + dots plot
+  nga_usaid_plot2 <- (nga_usaid_map + nga_dots) +
+    plot_annotation(
+      title = glue("{str_to_upper(cntry)} - {rep_pd} ART SATURATION"),
+      subtitle = "Increase in ART Saturation between <span style='color:#939598;'>**FY20Q4**</span> and <span style='color:#e07653'>**FY21Q2**</span> in all states<br/>States are sorted by FY21Q2 % ART Saturation"
+    ) &
+    theme(plot.caption = element_blank(),
+          plot.title = element_markdown(hjust = .5),
+          plot.subtitle = element_markdown(hjust = .5))
+
+  si_save(
+    filename = file.path(
+      dir_graphics,
+      paste0(rep_pd, " - ",
+             str_to_upper(cntry),
+             " - ", rep_agency,
+             " - ART Saturation MapUSAID_and_DotsChart - ",
+             format(Sys.Date(), "%Y%m%d"),
+             ".png")),
+    plot = nga_usaid_plot2,
     width = 10,
     height = 5)
 
@@ -514,10 +607,10 @@
       paste0(rep_pd, " - ",
              str_to_upper(cntry),
              " - ", rep_agency,
-             " - ART Saturation 3 - ",
+             " - ART Saturation BarsUSAID - ",
              format(Sys.Date(), "%Y%m%d"),
-             ".png")),
-    plot = nga_bar,
+             ".svg")),
+    plot = nga_plot,
     width = 7,
     height = 7)
 
@@ -527,12 +620,40 @@
       paste0(rep_pd, " - ",
              str_to_upper(cntry),
              " - ", rep_agency,
-             " - ART Saturation 3 - ",
+             " - ART Saturation BarsUSAID - ",
              format(Sys.Date(), "%Y%m%d"),
-             ".svg")),
-    plot = nga_plot,
+             ".png")),
+    plot = nga_bar,
     width = 7,
     height = 7)
+
+
+  si_save(
+    filename = file.path(
+      dir_graphics,
+      paste0(rep_pd, " - ",
+             str_to_upper(cntry),
+             " - ", rep_agency,
+             " - ART Saturation DotsUSAID - ",
+             format(Sys.Date(), "%Y%m%d"),
+             ".svg")),
+    plot = nga_dots,
+    width = 7,
+    height = 7)
+
+  si_save(
+    filename = file.path(
+      dir_graphics,
+      paste0(rep_pd, " - ",
+             str_to_upper(cntry),
+             " - ", rep_agency,
+             " - ART Saturation DotsUSAID - ",
+             format(Sys.Date(), "%Y%m%d"),
+             ".png")),
+    plot = nga_dots,
+    width = 7,
+    height = 7)
+
 
   # Map only
   si_save(
@@ -540,7 +661,7 @@
       dir_graphics,
       paste0(rep_pd, " - ",
              str_to_upper(cntry),
-             " - ART Saturation 4 - ",
+             " - ART Saturation MapOU - ",
              format(Sys.Date(), "%Y%m%d"),
              ".png")),
     plot = nga_map,
@@ -552,67 +673,9 @@
       dir_graphics,
       paste0(rep_pd, " - ",
              str_to_upper(cntry),
-             " - ART Saturation 4 - ",
-             format(Sys.Date(), "%Y%m%d"),
-             ".svg")),
-    plot = nga_map,
-    width = 7,
-    height = 7)
-
-  # SA
-  spdf_tx_sa <- spdf_tx %>%
-    filter(operatingunit == "South Africa",
-           usaid_flag == "USAID",
-           #!psnu %in% c("City of Tshwane", "Ekurhuleni", "Ethekwini"))
-           !psnu %in% c("Vhembe", "Nelson Mandela Bay", "Cape Winelands",
-                        "City of Tshwane", "Ekurhuleni"))
-
-  spdf_tx_sa %>%
-    filter(ART_SAT >= .9, usaid_flag == "USAID") %>%
-    pull(psnu)
-
-  # map
-  sa_map <- art_saturation_map(spdf_art = spdf_tx_sa,
-                            spdf = spdf_pepfar,
-                            terr = terr,
-                            country = "South Africa",
-                            lbl_size = 2)
-
-  # bar chart
-  sa_bar <- spdf_tx_sa %>%
-    st_drop_geometry() %>%
-    mutate(label = paste0(psnu, " (", percent(ART_SAT, 1), " ", comma(PLHIV, 1), ")")) %>%
-    ggplot(aes(reorder(label, PLHIV), PLHIV)) +
-    geom_col(aes(fill = ART_SAT), show.legend = F) +
-    # geom_text(aes(label = percent(ART_SAT, 1)),
-    #           hjust = -.2,
-    #           size = 3,
-    #           color = usaid_darkgrey) +
-    scale_fill_si(
-      palette = "burnt_siennas",
-      discrete = FALSE,
-      alpha = 0.7,
-      breaks = seq(0, 1, .25),
-      limits = c(0, 1),
-      labels = percent
-    ) +
-    scale_y_continuous(breaks = seq(0, max(spdf_tx_sa$PLHIV), 200000),
-                       labels = comma,
-                       position = "right") +
-    coord_flip() +
-    labs(x = "", y = "") +
-    si_style_xgrid()
-
-  sa_plot <- (sa_map + sa_bar)
-
-  si_save(
-    filename = file.path(
-      dir_graphics,
-      paste0("FY21Q1 - SOUTH AFRICA - ART Saturation 2 - ",
+             " - ART Saturation MapUSAID - ",
              format(Sys.Date(), "%Y%m%d"),
              ".png")),
-    plot = sa_plot,
-    width = 10,
-    height = 5)
-
-
+    plot = nga_usaid_map,
+    width = 7,
+    height = 7)
