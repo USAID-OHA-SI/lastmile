@@ -61,17 +61,24 @@
     str_sub(3,4) %>%
     paste0("FY", ., "Q", rep_qtr)
 
+  rep_ref_pd = rep_fys %>%
+    first() %>%
+    str_sub(3,4) %>%
+    paste0("FY", ., "Q4")
+
+  rep_pds <- c(rep_ref_pd, rep_pd)
+
   # MER Data - get the latest MSD PSNU x IM file
   file_psnu_im <- return_latest(
     folderpath = dir_merdata,
-    pattern = "^MER_.*_PSNU_IM_.*_20210212_v1_1.zip$",
+    pattern = "^MER_.*_PSNU_IM_.*_\\d{8}_v\\d{1}_\\d{1}.zip$",
     recursive = FALSE
   )
 
   # NAT Data - get the latest NAT_SUBNAT file
   file_natsub <- return_latest(
     folderpath = dir_merdata,
-    pattern = "^MER_.*_NAT_SUBNAT_.*_20210212_v1_1.zip$",
+    pattern = "^MER_.*_NAT_SUBNAT_.*_\\d{8}_v\\d{1}_\\d{1}.zip$",
     recursive = FALSE
   )
 
@@ -177,6 +184,133 @@
   }
 
 
+  #' @title ART Saturation Map
+  #' @param spdf_art Spatial data containing var to map
+  #' @param spdf     PEPFAR Polygons
+  #' @param terr     Terrain Raster
+  #' @param country  Ou / Country name
+  #' @param vl_var   VL Variable
+  #' @param rep_pd   Reporting Period
+  #'
+  vl_map <-
+    function(spdf_vl, spdf,
+             terr, country,
+             agency = "USAID",
+             vl_var = "VLC",
+             rep_pd = "FY21Q2",
+             lbl_size = 3,
+             add_caption = TRUE) {
+
+      # ART Sat
+      spdf_vl <- spdf_vl %>%
+        filter(fundingagency == agency,
+               operatingunit == country)
+
+      print(paste0(country, ": ", (spdf_vl %>% nrow())))
+
+      # Extract admin 0 and 1 for basemap
+      admin0 <- spdf %>%
+        filter(operatingunit == country,
+               label == "country")
+
+      admin1 <- spdf %>%
+        filter(operatingunit == country,
+               label == "snu1")
+
+      # Produce basemap
+      basemap <- terrain_map(countries = admin0,
+                             adm0 = admin0,
+                             adm1 = admin1,
+                             mask = TRUE,
+                             terr = terr)
+
+      max = 1;
+
+      # Produce thematic map
+      if (vl_var == "VLC") {
+
+        max <- ifelse(max(spdf_vl$VLC) > max, max(spdf_vl$VLC), max)
+
+        map <- basemap +
+          geom_sf(
+            data = spdf_vl,
+            aes(fill = VLC),
+            lwd = .2,
+            color = grey10k
+          )
+      }
+
+      if (vl_var == "VLS") {
+
+        max <- ifelse(max(spdf_vl$VLS) > max, max(spdf_vl$VLS), max)
+
+        map <- basemap +
+          geom_sf(
+            data = spdf_vl,
+            aes(fill = VLS),
+            lwd = .2,
+            color = grey10k
+          )
+      }
+
+      map <- map +
+        scale_fill_si(
+          palette = "genoas",
+          discrete = FALSE,
+          alpha = 0.7,
+          na.value = grey40k,
+          breaks = seq(0, max, .25),
+          limits = c(0, max),
+          labels = percent
+        ) +
+        geom_sf(data = admin0,
+                colour = grey10k,
+                fill = NA,
+                size = 1) +
+        geom_sf(data = admin0,
+                colour = grey90k,
+                fill = NA,
+                size = .3)
+
+      if (vl_var == "VLC") {
+        map <- map +
+          geom_sf_text(data = spdf_vl,
+                       aes(label = paste0(psnu, "\n", percent(VLC, 1))),
+                       #aes(label = percent(VLC, 1))
+                       size = lbl_size,
+                       color = grey10k)
+      }
+
+      if (vl_var == "VLS") {
+        map <- map +
+          geom_sf_text(data = spdf_vl,
+                       aes(label = paste0(psnu, "\n", percent(VLS, 1))),
+                       #aes(label = percent(VLC, 1))
+                       size = lbl_size,
+                       color = grey10k)
+      }
+
+      # Add caption
+      if (add_caption == TRUE) {
+
+        map <- map +
+          labs(
+            #title = "ART SATUTATION IN USAID SUPPORTED PSNUs",
+            #subtitle = "PSNUs with labelled",
+            caption = paste0(glue("{rep_pd} {vl_var}, Source: {rep_pd} PSNU x IM MSDs, Produced on "),
+                             format(Sys.Date(), "%Y-%m-%d")))
+
+      }
+
+      # Add theme
+      map <- map +
+        si_style_map() +
+        theme(plot.caption = element_text(size = 6, family = "Source Sans Pro"))
+
+      return(map)
+    }
+
+
   #' VLC Change
   #'
   vlc_change <- function(spdf_vl, country) {
@@ -205,6 +339,80 @@
                  shape = 21, size = 5,
                  color = grey10k,
                  show.legend = F) +
+      scale_fill_si(
+        palette = "genoas",
+        discrete = FALSE,
+        alpha = 1
+      ) +
+      scale_y_continuous(labels = percent, position = "right") +
+      scale_color_identity() +
+      coord_flip() +
+      labs(x = "", y = "") +
+      si_style()
+
+    return(viz)
+  }
+
+  #' VLC Change
+  #'
+  vl_change <- function(df_vl, country,
+                        vl_var = "VLC") {
+
+    # diff variables
+    vl_diff <- paste0(vl_var, "_Diff")
+
+    df_vl <- df_vl %>%
+      filter(operatingunit == country,
+             fundingagency == "USAID") %>%
+      mutate(label = paste0(psnu, " (", percent(!!sym(vl_var), 1), ")"),
+             change_color = ifelse({{vl_diff}} > 0, genoa_light, usaid_red))
+
+    # VIZ Placeholder
+    viz <- NULL
+
+    # VLC
+    if (vl_var == "VLC") {
+      viz <- df_vl %>%
+        ggplot(aes(x = reorder(label, VLC), VLC)) +
+        geom_hline(yintercept = .9,
+                   lty = "dashed", lwd = 1,
+                   color = usaid_darkgrey) +
+        geom_segment(aes(xend = label,
+                         y = VLC_Prev, yend = VLC,
+                         color = change_color),
+                     size = 1, alpha = .7) +
+        geom_point(aes(y = VLC_Prev),
+                   shape = 21, fill = grey50k,
+                   size = 4 ,
+                   color = grey10k) +
+        geom_point(aes(y = VLC, fill = VLC),
+                   shape = 21, size = 5,
+                   color = grey10k,
+                   show.legend = F)
+    }
+
+    # VLS
+    if (vl_var == "VLS") {
+      viz <- df_vl %>%
+        ggplot(aes(x = reorder(label, VLS), VLS)) +
+        geom_hline(yintercept = .9,
+                   lty = "dashed", lwd = 1,
+                   color = usaid_darkgrey) +
+        geom_segment(aes(xend = label,
+                         y = VLS_Prev, yend = VLS,
+                         color = change_color),
+                     size = 1, alpha = .7) +
+        geom_point(aes(y = VLS_Prev),
+                   shape = 21, fill = grey50k,
+                   size = 4 ,
+                   color = grey10k) +
+        geom_point(aes(y = VLS, fill = VLS),
+                   shape = 21, size = 5,
+                   color = grey10k,
+                   show.legend = F)
+    }
+
+    viz <- viz +
       scale_fill_si(
         palette = "genoas",
         discrete = FALSE,
@@ -249,7 +457,7 @@
     distinct(fundingagency)
 
   # TX Viral Load
-  df_vl <- df_psnu %>%
+  df_tx <- df_psnu %>%
     filter(
       fiscal_year %in% rep_fys, # Needed for Q1 vl
       str_to_lower(fundingagency) != "dedup",
@@ -274,23 +482,28 @@
              indicator) %>%
     summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
     ungroup() %>%
-    reshape_msd(clean = TRUE) %>%
+    reshape_msd(clean = TRUE)
+
+  df_vl <- df_tx %>%
     dplyr::select(-period_type) %>%
     pivot_wider(names_from = indicator, values_from = value) %>%
     group_by(fundingagency, operatingunit, countryname, snu1, psnuuid, psnu) %>%
     mutate(VLC = TX_PVLS_D / lag(TX_CURR, 2, order_by = period),
-           VLC_Prev = lag(VLC, 1, order_by = period),
-           VLC_Diff = VLC - lag(VLC, 2, order_by = period)) %>%
+           VLnC = case_when(
+             VLC > 1 ~ 0,
+             TRUE ~ 1 - VLC
+           ),
+           VLS = (TX_PVLS / TX_PVLS_D) * VLC,
+           fiscal_year = str_sub(period, 1, 4)) %>%
     ungroup() %>%
-    mutate(
-      VLS = (TX_PVLS / TX_PVLS_D) * VLC,
-      VLnC = case_when(
-        VLC > 1 ~ 0,
-        TRUE ~ 1 - VLC
-      ),
-      fiscal_year = str_sub(period, 1, 4)
-    ) %>%
     relocate(fiscal_year, .before = period) %>%
+    filter(period %in% rep_pds) %>% # Get only reference and curr period
+    group_by(fundingagency, operatingunit, countryname, snu1, psnuuid, psnu) %>%
+    mutate(VLC_Prev = lag(VLC, 1, order_by = period),
+           VLC_Diff = VLC - lag(VLC, 1, order_by = period),
+           VLS_Prev = lag(VLS, 1, order_by = period),
+           VLS_Diff = VLS - lag(VLS, 1, order_by = period)) %>%
+    ungroup() %>%
     filter(period == rep_pd) %>%
     clean_psnu()
 
@@ -303,8 +516,7 @@
                             "operatingunit" = "operatingunit",
                             "countryname" = "countryname")) %>%
     filter(label == "prioritization",
-           !is.na(VLC)) %>%
-    clean_psnu()
+           !is.na(VLC))
 
 
 # VIZ ----
@@ -421,27 +633,73 @@
 
   # map
   nga_vlc_map <- vlc_map(spdf_vl = spdf_vl_nga,
-                            spdf = spdf_pepfar,
-                            terr = terr,
-                            country = "Nigeria",
-                            lbl_size = 2)
+                         spdf = spdf_pepfar,
+                         terr = terr,
+                         country = "Nigeria",
+                         lbl_size = 2)
 
   nga_vlc_ch <- vlc_change(spdf_vl = spdf_vl_nga,
                            country = "Nigeria")
 
 
+  # Viz - map
+
+  nga_vlc_map <- vl_map(spdf_vl = spdf_vl_nga,
+                        spdf = spdf_pepfar,
+                        terr = terr,
+                        country = "Nigeria",
+                        vl_var = "VLC",
+                        lbl_size = 2)
+
+  nga_vls_map <- vl_map(spdf_vl = spdf_vl_nga,
+                         spdf = spdf_pepfar,
+                         terr = terr,
+                         country = "Nigeria",
+                         vl_var = "VLS",
+                         lbl_size = 2)
+
+  # Viz - change
+  nga_vlc_ch <- vl_change(df_vl = df_vl,
+                          country = "Nigeria",
+                          vl_var = "VLC")
+
+  nga_vls_ch <- vl_change(df_vl = df_vl,
+                          country = "Nigeria",
+                          vl_var = "VLS")
+
+  # Viz - combine
+  # VLC
   nga_vlc_plot <- (nga_vlc_map + nga_vlc_ch) +
     theme(axis.text.x = element_text(family = "Source Sans Pro"),
-          plot.caption = element_text(hjust = .5, family = "Source Sans Pro")
+          #plot.caption = element_text(hjust = .5, family = "Source Sans Pro")
+          plot.caption = element_blank()
     )
 
   si_save(
     filename = file.path(
       dir_graphics,
-      paste0("FY21Q1 - NIGERIA - TX VLC Change - ",
+      paste0(glue("{rep_pd} - NIGERIA - TX VLC Change - "),
              format(Sys.Date(), "%Y%m%d"),
              ".png")),
     plot = nga_vlc_plot,
+    width = 10,
+    height = 5)
+
+  # Viz - combine
+  # VLS
+  nga_vls_plot <- (nga_vls_map + nga_vls_ch) +
+    theme(axis.text.x = element_text(family = "Source Sans Pro"),
+          #plot.caption = element_text(hjust = .5, family = "Source Sans Pro")
+          plot.caption = element_blank()
+    )
+
+  si_save(
+    filename = file.path(
+      dir_graphics,
+      paste0(glue("{rep_pd} - NIGERIA - TX VLS Change - "),
+             format(Sys.Date(), "%Y%m%d"),
+             ".png")),
+    plot = nga_vls_plot,
     width = 10,
     height = 5)
 
