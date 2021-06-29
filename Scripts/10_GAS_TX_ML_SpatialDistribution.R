@@ -87,6 +87,9 @@
     recursive = FALSE
   )
 
+  # MSD File version
+  msd_version <- ifelse(str_detect(file_psnu_im, ".*_\\d{8}_v1_\\d"), "i", "c")
+
   # Shapefile path
   file_shp <- return_latest(
     folderpath = dir_geodata,
@@ -101,7 +104,9 @@
   #' @param fy fiscal year
   #' @param snu_prio snuprioritization
   #'
-  extract_tx_ml <- function(.data, fy = "2020",
+  extract_tx_ml <- function(.data,
+                            fy = "2020",
+                            agency = "USAID",
                             snu_prio = NULL,
                             mechs = NULL) {
 
@@ -123,7 +128,7 @@
         indicator == "TX_ML",
         standardizeddisaggregate == "Age/Sex/ARTNoContactReason/HIVStatus",
         typemilitary == 'N',
-        fundingagency == "USAID"
+        fundingagency == agency
       ) %>%
       mutate(
         otherdisaggregate = str_remove(otherdisaggregate, "No Contact Outcome - "),
@@ -138,6 +143,7 @@
       summarize_at(vars(targets:cumulative), sum, na.rm = TRUE) %>%
       ungroup() %>%
       mutate(
+        # TODO: make this dynamic
         prct_ch = round(((qtr2 - qtr1) - qtr1) / qtr1 * 100, 2)
       ) %>%
       dplyr::select(operatingunit, snu1, snu1uid, psnuuid,
@@ -352,7 +358,7 @@
     admin1 <- spdf %>%
       filter(operatingunit == {{country}}, label == "snu1")
 
-    basemap <- terrain_map(countries = country,
+    basemap <- terrain_map(countries = admin0,
                            adm0 = admin0,
                            adm1 = admin1,
                            mask = TRUE,
@@ -362,14 +368,26 @@
     gviz <- basemap +
       geom_sf(data = spdf_tx_ml, aes(fill = prct), color = grey10k, alpha = .7) +
       geom_sf(data = admin0, fill = NA, size = 1.5, color = grey10k) +
-      geom_sf(data = admin0, fill = NA, size = .3, color = grey90k) +
-      geom_sf_text(data = spdf_tx_ml,
-                   aes(label = paste0(psnu, "\n(", percent(prct, 1), ")"),
-                       color = prct_color),
-                   size = 2) +
-      scale_fill_si(palette = "burnt_siennas", discrete = F,
-                    limits = c(0, 1), labels = percent, na.value = NA, alpha = .8) +
-      scale_color_identity()
+      geom_sf(data = admin0, fill = NA, size = .3, color = grey90k)
+
+    # Add label
+    if (!is.null(label_name)) {
+      gviz <- gviz +
+        geom_sf_text(data = spdf_tx_ml,
+                     aes(label = paste0(psnu, "\n(", percent(prct, 1), ")"),
+                         color = prct_color),
+                     size = 2) +
+        scale_color_identity()
+    }
+
+    # Apply fill color
+    gviz <- gviz +
+      scale_fill_si(palette = "burnt_siennas",
+                    discrete = F,
+                    limits = c(0, 1),
+                    labels = percent,
+                    na.value = NA,
+                    alpha = .8)
 
     # facet if needed
     if (is.null(disagg)) {
@@ -381,10 +399,10 @@
     gviz <- gviz  +
       si_style_map() +
       theme(
-        strip.text = element_text(face = "bold"),
-        plot.title = element_text(face = "bold", color = grey80k),
-        plot.subtitle = element_text(face = "italic", margin = unit(c(1,1,10,1), 'pt')),
-        plot.caption = element_text(face = "italic")
+        strip.text = element_text(family = "Source Sans Pro", face = "bold"),
+        plot.title = element_text(family = "Source Sans Pro", face = "bold", color = grey80k),
+        plot.subtitle = element_text(family = "Source Sans Pro", margin = unit(c(1,1,10,1), 'pt')),
+        plot.caption = element_text(family = "Source Sans Pro", face = "italic")
       )
 
     return(gviz)
@@ -444,7 +462,7 @@
   ## Munge TX_ML
   df_tx_ml <- df_psnu %>%
     clean_psnu() %>%
-    extract_tx_ml(fy %in% rep_fys)
+    extract_tx_ml(fy = rep_fy)
 
   df_tx_ml_trend <- df_psnu %>%
     extract_tx_ml_trend(fys = rep_fys, agency = rep_agency) %>%
@@ -453,13 +471,13 @@
 
 # EXTRACT & VIZ
 
-  caption <- glue("Source: {rep_pd} MSD, Produced on {format(Sys.Date(), '%Y-%m-%d')}")
+  caption <- glue("Source: {rep_pd}{msd_version} MSD, Produced by OHA/SIEI on {format(Sys.Date(), '%Y-%m-%d')}")
 
   ## Batch processing
   df_tx_ml %>%
+    filter(str_detect(operatingunit, " Region$", negate = TRUE)) %>%
     distinct(operatingunit) %>%
     pull() %>%
-    #nth(23) %>%
     map(function(country) {
 
       # filter data
@@ -469,14 +487,18 @@
       # All
       plot = plot_tx_ml(df = df_tx_ml_cntry, disagg = "to", fcolor = ml_colors)
 
-      map = map_tx_ml(df_tx_ml_cntry, spdf_pepfar, terr, country)
+      map = map_tx_ml(df_tx_ml_cntry, spdf_pepfar, terr, country, label_name = NULL)
 
       viz <- map + plot +
         plot_layout(ncol = 2, widths = c(2, 1)) +
         plot_annotation(
-          title = str_to_upper(glue("{cntry} - TX_ML IIT INTERRUPTION IN TREATMENT (ALL)")),
+          title = str_to_upper(glue("{country} - TX_ML IIT INTERRUPTION IN TREATMENT (ALL)")),
           caption = caption,
-          theme = theme(plot.title = element_text(family = "Source Sans Pro", hjust = .5))
+          theme = theme(plot.title = element_text(family = "Source Sans Pro",
+                                                  size = 14, hjust = .5),
+                        plot.caption = element_text(family = "Source Sans Pro",
+                                                    face = "italic",
+                                                    size = 7, hjust = 1))
         )
 
       ggsave(here(dir_graphics,
@@ -484,193 +506,3 @@
              plot = viz,
              scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
     })
-
-
-## STOP HERE ----
-
-  ## Nigeria Specific data
-  df_cntry <- df_tx_ml %>%
-    filter(operatingunit == cntry)
-
-  # PSNU level trends
-  df_cntry_trend <- df_tx_ml_trend %>%
-    filter(operatingunit == cntry) %>%
-    mutate(label = paste0(psnu, " (", percent(ml_prct), ")"))
-
-  # OU level trends
-  df_ou_trend <- df_cntry_trend %>%
-    group_by(countryname, otherdisagg, period) %>%
-    summarise_at(vars(value), sum, na.rm = TRUE) %>%
-    ungroup() %>%
-    group_by(countryname, period) %>%
-    mutate(ml_ttl = sum(value, na.rm = TRUE),
-           ml_prct = value / ml_ttl) %>%
-    ungroup()
-
-  # Viz- OU AreaPlot
-  viz_ou_ml <- df_ou_trend %>%
-    ggplot(aes(x = period,
-               y = ml_prct,
-               group = otherdisagg,
-               fill = otherdisagg,
-               color = otherdisagg,
-               label = comma(value, 1))
-               ) +
-    geom_area(show.legend = FALSE) +
-    geom_line(size = 2, color = grey10k, show.legend = FALSE) +
-    geom_line(size = 1, show.legend = FALSE) +
-    geom_text(data = df_ou_trend %>% filter(period %in% rep_pds2),
-              vjust = -.3, size = 3, color = usaid_darkgrey,
-              position = position_nudge(y = 0.01)) +
-    scale_fill_manual(values = ml_colors) +
-    scale_color_manual(values = ml_colors) +
-    scale_y_continuous(labels = percent, limits = c(0, 1)) +
-    facet_wrap(~otherdisagg, nrow = 1) +
-    labs(x = "", y = "",
-         title = str_to_upper(glue("USAID TX_ML TREND, {rep_ref_pd} to {rep_pd}")),
-         caption = glue("{str_to_upper(cntry)} - {caption}")) +
-    si_style_ygrid() +
-    theme(axis.text = element_text(size = 6),
-          legend.title = element_blank(),
-          strip.text = element_text(hjust = .5))
-
-  ggsave(here(dir_graphics,
-              glue("{rep_pd} - {str_to_upper(cntry)}_USAID_TX_ML_OU_Trend_AreaPlot_{format(Sys.Date(), '%Y%m%d')}.png")),
-         plot = viz_ou_ml,
-         scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
-
-  # PSNU AreaPlot
-  df_cntry_trend %>%
-    distinct(countryname, psnu) %>%
-    pull(psnu) %>%
-    map(function(psnu){
-
-      print(psnu)
-
-      viz_trend <- df_cntry_trend %>%
-        filter(psnu == {{psnu}}) %>%
-        ggplot(aes(x = period,
-                   y = ml_prct,
-                   group = otherdisagg,
-                   fill = otherdisagg,
-                   color = otherdisagg,
-                   label = comma(value, 1))
-        ) +
-        geom_area(show.legend = FALSE) +
-        geom_line(size = 2, color = grey10k, show.legend = FALSE) +
-        geom_line(size = 1, show.legend = FALSE) +
-        geom_text(data = df_ou_trend %>% filter(period %in% rep_pds2),
-                  vjust = -.3, size = 3, color = usaid_darkgrey,
-                  position = position_nudge(y = 0.01)) +
-        scale_fill_manual(values = ml_colors) +
-        scale_color_manual(values = ml_colors) +
-        scale_y_continuous(labels = percent, limits = c(0, 1)) +
-        facet_wrap(~otherdisagg, nrow = 1) +
-        labs(x = "", y = "",
-             title = str_to_upper(glue("{psnu} - TX_ML TREND, {rep_ref_pd} to {rep_pd}")),
-             caption = glue("{str_to_upper(cntry)} / {str_to_upper(psnu)} - {caption}")) +
-        si_style_ygrid() +
-        theme(axis.text = element_text(size = 6),
-              legend.title = element_blank(),
-              strip.text = element_text(hjust = .5))
-
-      ggsave(here(dir_graphics,
-                  glue("{rep_pd} - {str_to_upper(cntry)}_{str_to_upper(psnu)}_USAID_TX_ML_OU_Trend_AreaPlot_{format(Sys.Date(), '%Y%m%d')}.png")),
-             plot = viz_trend,
-             scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
-
-      return(viz_trend)
-    })
-
-  # All
-  ml_plot = plot_tx_ml(df = df_cntry, disagg = "to", fcolor = ml_colors)
-  ml_map = map_tx_ml(df_cntry, spdf_pepfar, terr, cntry)
-
-  viz_ml <- ml_map + ml_plot +
-    plot_layout(ncol = 2, widths = c(2, 1)) +
-    plot_annotation(
-      title = str_to_upper(glue("{cntry} - TX_ML IIT INTERRUPTION IN TREATMENT (ALL)")),
-      caption = caption,
-      theme = theme(plot.title = element_text(family = "Source Sans Pro", hjust = .5))
-    )
-
-  ggsave(here(dir_graphics,
-              glue("{rep_pd} - {str_to_upper(cntry)}_TX_ML_InterruptionInTreatment_{format(Sys.Date(), '%Y%m%d')}.png")),
-         plot = viz_ml,
-         scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
-
-  #c("TO", "ITT", "Refused or Stopped", "Died")
-
-  # TO Only
-  to_plot = plot_tx_ml(df = df_cntry, disagg = "to", fcolor = ml_colors)
-  to_map = map_tx_ml(df_cntry, spdf_pepfar, terr, cntry, disagg = "TO")
-
-  viz_tx_ml <- to_map + to_plot +
-    plot_layout(ncol = 2, widths = c(2, 1)) +
-      plot_annotation(
-        title = str_to_upper(glue("{cntry} - TX_ML IIT Transferred out")),
-        caption = caption,
-        theme = theme(plot.title = element_text(family = "Source Sans Pro", hjust = .5))
-      )
-
-  ggsave(here(dir_graphics,
-              glue("{rep_pd} - {str_to_upper(cntry)}_TX_ML_TransferredOut_{format(Sys.Date(), '%Y%m%d')}.png")),
-         plot = viz_tx_ml,
-         scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
-
-
-  # IIT Only
-  iit_plot = plot_tx_ml(df = df_cntry, disagg = "iit", fcolor = ml_colors)
-  iit_map = map_tx_ml(df_cntry, spdf_pepfar, terr, cntry, disagg = "IIT")
-
-  viz_tx_ml <- iit_map + iit_plot +
-    plot_layout(ncol = 2, widths = c(2, 1)) +
-    plot_annotation(
-      title = str_to_upper(glue("{cntry} - TX_ML INTERRUPTION IN TREATMENT (Only)")),
-      caption = caption,
-      theme = theme(plot.title = element_text(family = "Source Sans Pro", hjust = .5))
-    )
-
-  ggsave(here(dir_graphics,
-              glue("{rep_pd} - {str_to_upper(cntry)}_TX_ML_IIT_lt3_and_3plus_{format(Sys.Date(), '%Y%m%d')}.png")),
-         plot = viz_tx_ml,
-         scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
-
-  # Refused of Stopped Only
-  rs_plot = plot_tx_ml(df = df_cntry, disagg = "rs", fcolor = ml_colors)
-  rs_map = map_tx_ml(df_cntry, spdf_pepfar, terr, cntry, disagg = "Refused or Stopped")
-
-  viz_tx_ml <- rs_map + rs_plot +
-    plot_layout(ncol = 2, widths = c(2, 1)) +
-    plot_annotation(
-      title = str_to_upper(glue("{cntry} - TX_ML Refused or Stopped")),
-      caption = caption,
-      theme = theme(plot.title = element_text(family = "Source Sans Pro", hjust = .5))
-    )
-
-  ggsave(here(dir_graphics,
-              glue("{rep_pd} - {str_to_upper(cntry)}_TX_ML_RefusedOrStopped_{format(Sys.Date(), '%Y%m%d')}.png")),
-         plot = viz_tx_ml,
-         scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
-
-  # Died Only
-  d_plot = plot_tx_ml(df = df_cntry, disagg = "d", fcolor = ml_colors)
-  d_map = map_tx_ml(df_cntry, spdf_pepfar, terr, cntry, disagg = "Died")
-
-  viz_tx_ml <- d_map + d_plot +
-    plot_layout(ncol = 2, widths = c(2, 1)) +
-    plot_annotation(
-      title = str_to_upper(glue("{cntry} - TX_ML Died")),
-      caption = caption,
-      theme = theme(plot.title = element_text(family = "Source Sans Pro", hjust = .5))
-    )
-
-  ggsave(here(dir_graphics,
-              glue("{rep_pd} - {str_to_upper(cntry)}_TX_ML_Died_{format(Sys.Date(), '%Y%m%d')}.png")),
-         plot = viz_tx_ml,
-         scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
-
-
-
-
-
