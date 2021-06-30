@@ -4,7 +4,7 @@
 ##  PURPOSE: Geo-depiction of VL - % not covered
 ##  LICENCE: MIT
 ##  DATE:    2020-09-04
-##  UPDATED: 2021-05-24
+##  UPDATED: 2021-06-30
 
 # Libraries ---
 
@@ -38,9 +38,6 @@
   dir_merdata <- si_path("path_msd")
 
 
-  ## FY21 Q2 MER Data
-  psnu_im <- "^MER_.*_PSNU_IM_.*_20210514_v1.1.zip$"
-
   ## Reporting Filters
   rep_agency = c("USAID", "HHS/CDC")
 
@@ -55,11 +52,9 @@
   ## File path + name
   file_psnu_im <- return_latest(
     folderpath = dir_merdata,
-    pattern = psnu_im,
+    pattern = "^MER_.*_PSNU_IM_.*_\\d{8}_v\\d{1}_\\d{1}.zip$",
     recursive = TRUE
   )
-
-  file_psnu_im
 
   ## File path + name
   file_shp <- return_latest(
@@ -68,7 +63,8 @@
     recursive = TRUE
   )
 
-  file_shp
+  # MSD File version
+  msd_version <- ifelse(str_detect(file_psnu_im, ".*_\\d{8}_v1_\\d"), "i", "c")
 
 # FUNCTIONS ---------------------------------------------------------
 
@@ -133,7 +129,7 @@ get_title <-
 #'
 get_caption <-
   function(country,
-           rep_pd = "FY21Q2i",
+           rep_pd = "FY21Q2c",
            var = NULL) {
 
   caption <- paste0("OHA/SIEI - Data Source: ",
@@ -196,8 +192,6 @@ get_output_name <-
 
 ## MER PSNU Data
 df_psnu <- read_msd(file_psnu_im)
-
-df_psnu %>% glimpse()
 
 ## MER Data Munging
 
@@ -266,95 +260,19 @@ df_tx_bad %>%
 
 # VIZ --------------------------------------
 
-## Test Individual VL maps
+  ## Test Individual VL maps
 
-cname <- "Nigeria"
+  cname <- "Nigeria"
 
-map_viralload(
-  spdf = spdf_pepfar,
-  df = df_vl,
-  vl_variable = "VLS",
-  cntry = cname,
-  terr_raster = terr,
-  agency = T,
-  facet_rows = 2
-)
-
-# Nigeria's request
-# map_viralload(
-#   spdf = spdf_pepfar,
-#   df = df_vl,
-#   vl_variable = "VLS",
-#   cntry = cname,
-#   terr_raster = terr,
-#   agency = T,
-#   save = T,
-#   facet_rows = 2,
-#   add_labels = TRUE
-# )
-#
-# map_viralload(
-#   spdf = spdf_pepfar,
-#   df = df_vl,
-#   vl_variable = "VLC",
-#   cntry = cname,
-#   terr_raster = terr,
-#   agency = T,
-#   save = T,
-#   facet_rows = 2,
-#   add_labels = TRUE
-# )
-
-
-# PEDS Test
-map_peds_viralloads(
-  spdf = spdf_pepfar,
-  df = df_vl_u15,
-  cntry = cname,
-  terr_raster = terr,
-  agency = T,
-  facet_rows = 2,
-  save = TRUE
-)
-
-# Generic Test
-map_generic(
-  spdf = spdf_pepfar,
-  df_gen = df_eid,
-  mapvar = eid_cov_under2,
-  cntry = cname,
-  terr_raster = terr,
-  agency = T,
-  facet_rows = 2,
-  save = TRUE,
-  four_parts = T
-)
-
-
-# Test VLc + EID combined
-map_vlc_eid(
-  spdf = spdf_pepfar,
-  df = df_vl_u15,
-  vl_variable = "VLC",
-  cntry = cname,
-  terr_raster = terr,
-  df2 = df_eid,
-  mapvar = eid_cov_under2,
-  save_all = F
-)
-
-# Test TX_ML_PLP map
-map_generic(
-  spdf = spdf_pepfar,
-  df_gen = df_tx_bad,
-  mapvar = TX_ML_PLP,
-  cntry = cname,
-  terr_raster = terr,
-  agency = T,
-  facet_rows = 2,
-  save = F,
-  four_parts = F
-)
+  map_viralload(
+    spdf = spdf_pepfar,
+    df = df_vl,
+    vl_variable = "VLS",
+    cntry = cname,
+    terr_raster = terr,
+    agency = T,
+    facet_rows = 2
+  )
 
 
 
@@ -363,116 +281,103 @@ map_generic(
 
 ## Batch VL mapping
 
-## Batch: ALL by Agency
+  ## Batch: ALL by Agency
 
-map_ous <- df_vl %>%
-  filter(!str_detect(operatingunit, " Region$"),
-         !is.na(VLC)) %>%
-  distinct(operatingunit) %>%
-  pull()
+  map_ous <- df_vl %>%
+    filter(!str_detect(operatingunit, " Region$"),
+           !is.na(VLC)) %>%
+    distinct(operatingunit) %>%
+    pull()
 
-map_ous %>%
-  map(.x, .f = ~ map_viralloads(
-      spdf = spdf_pepfar,
-      df = df_vl,
-      cntry = .x,
-      terr_raster = terr,
-      save = TRUE,
-      agency = TRUE,
-      facet_rows = 2
+  map_ous %>%
+    map(.x, .f = ~ map_viralloads(
+        spdf = spdf_pepfar,
+        df = df_vl,
+        cntry = .x,
+        terr_raster = terr,
+        save = TRUE,
+        agency = TRUE,
+        facet_rows = 2
+      )
     )
-  )
 
-# For Nigeria only
-# map_ous %>%
-#   nth(13) %>%
-#   map(.x, .f = ~ map_viralloads(
-#     spdf = spdf_pepfar,
-#     df = df_vl,
-#     cntry = .x,
-#     terr_raster = terr,
-#     save = TRUE,
-#     agency = TRUE,
-#     facet_rows = 2,
-#     add_labels = TRUE)
-#   )
 
-## Batch: ALL USAID Only
-map_ous <- df_vl %>%
-  filter(fundingagency == "USAID",
-         !str_detect(operatingunit, " Region$"),
-         !is.na(VLC)) %>%
-  distinct(operatingunit) %>%
-  pull()
+  ## Batch: ALL USAID Only
+  map_ous <- df_vl %>%
+    filter(fundingagency == "USAID",
+           !str_detect(operatingunit, " Region$"),
+           !is.na(VLC)) %>%
+    distinct(operatingunit) %>%
+    pull()
 
-map_ous %>%
-  map(.x, .f = ~ map_viralloads(
-    spdf = spdf_pepfar,
-    df = df_vl %>% filter(fundingagency == "USAID"),
-    cntry = .x,
-    terr_raster = terr,
-    save = TRUE,
-    agency = FALSE
-  ))
-
-## Batch: PEDS by Agency
-map_ous <- df_vl_u15 %>%
-  filter(!str_detect(operatingunit, " Region$"),
-         !is.na(VLC)) %>%
-  distinct(operatingunit) %>%
-  pull()
-
-map_ous %>%
-  map(.x, .f = ~ map_peds_viralloads(
+  map_ous %>%
+    map(.x, .f = ~ map_viralloads(
       spdf = spdf_pepfar,
-      df = df_vl_u15,
-      cntry = .x,
-      terr_raster = terr,
-      save = TRUE,
-      agency = TRUE,
-      facet_rows = 2
-    )
-  )
-
-## Batch: PEDS USAID
-map_ous <- df_vl_u15 %>%
-  filter(!str_detect(operatingunit, " Region$"),
-         fundingagency == "USAID",
-         !is.na(VLC)) %>%
-  distinct(operatingunit) %>%
-  pull()
-
-map_ous %>%
-  map(.x, .f = ~ map_peds_viralloads(
-      spdf = spdf_pepfar,
-      df = df_vl_u15 %>% filter(fundingagency == "USAID"),
+      df = df_vl %>% filter(fundingagency == "USAID"),
       cntry = .x,
       terr_raster = terr,
       save = TRUE,
       agency = FALSE
+    ))
+
+  ## Batch: PEDS by Agency
+  map_ous <- df_vl_u15 %>%
+    filter(!str_detect(operatingunit, " Region$"),
+           !is.na(VLC)) %>%
+    distinct(operatingunit) %>%
+    pull()
+
+  map_ous %>%
+    map(.x, .f = ~ map_peds_viralloads(
+        spdf = spdf_pepfar,
+        df = df_vl_u15,
+        cntry = .x,
+        terr_raster = terr,
+        save = TRUE,
+        agency = TRUE,
+        facet_rows = 2
+      )
     )
-  )
 
+  ## Batch: PEDS USAID
+  map_ous <- df_vl_u15 %>%
+    filter(!str_detect(operatingunit, " Region$"),
+           fundingagency == "USAID",
+           !is.na(VLC)) %>%
+    distinct(operatingunit) %>%
+    pull()
 
-# Batch: VL PEDS  & EID Coverage
-map_ous <- df_eid %>%
-  filter(!str_detect(operatingunit, " Region$"),
-         !is.na(eid_cov_under2)) %>%
-  distinct(operatingunit) %>%
-  pull()
-
-map_ous %>%
-  map(.x, .f = ~ map_vlc_eid(
-      spdf = spdf_pepfar,
-      df = df_vl_u15,
-      vl_variable = "VLC",
-      cntry = .x,
-      terr_raster = terr,
-      df2 = df_eid,
-      mapvar = eid_cov_under2,
-      save_all = T
+  map_ous %>%
+    map(.x, .f = ~ map_peds_viralloads(
+        spdf = spdf_pepfar,
+        df = df_vl_u15 %>% filter(fundingagency == "USAID"),
+        cntry = .x,
+        terr_raster = terr,
+        save = TRUE,
+        agency = FALSE
+      )
     )
-  )
+
+
+  # Batch: VL PEDS  & EID Coverage
+  map_ous <- df_eid %>%
+    filter(!str_detect(operatingunit, " Region$"),
+           !is.na(eid_cov_under2)) %>%
+    distinct(operatingunit) %>%
+    pull()
+
+  map_ous %>%
+    map(.x, .f = ~ map_vlc_eid(
+        spdf = spdf_pepfar,
+        df = df_vl_u15,
+        vl_variable = "VLC",
+        cntry = .x,
+        terr_raster = terr,
+        df2 = df_eid,
+        mapvar = eid_cov_under2,
+        save_all = T
+      )
+    )
 
 
 # Batch: TX_ML_PLP map
