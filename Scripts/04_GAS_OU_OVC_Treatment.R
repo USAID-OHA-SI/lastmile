@@ -61,7 +61,7 @@
 
     file_psnu_im <- return_latest(
         folderpath = dir_merdata,
-        pattern = "^MER_.*_PSNU_IM_.*_\\d{8}_v1_1.zip$",
+        pattern = "^MER_.*_PSNU_IM_.*_\\d{8}_v\\d_\\d.zip$",
         recursive = FALSE
     )
 

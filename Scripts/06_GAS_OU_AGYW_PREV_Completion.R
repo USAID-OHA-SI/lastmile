@@ -3,12 +3,13 @@
 ##  PURPOSE: % ompletion of primary package among those in DREAMS 13+ mo
 ##  LICENCE: MIT
 ##  DATE:    2020-09-17
-##  UPDATED: 2020-05-27
+##  UPDATED: 2020-07-06
 
 # Libraries ----
 
   library(tidyverse)
   library(sf)
+  library(glamr)
   library(glitr)
   library(gisr)
   library(here)
@@ -40,15 +41,11 @@
   ## Reporting vars
     rep_fy <- 2021
     rep_qtr <- 2
+
     rep_pd <- paste0("FY", str_sub(rep_fy, 3, 4), "Q", rep_qtr)
     curr_pd <- paste0("qtr", rep_qtr)
     remv_pd <- paste0("qtr", 1:4)
     remv_pd <- remv_pd[!remv_pd == curr_pd]
-    msd_version <- "i"
-
-  ## Output Caption
-    caption <- glue("Reporting Period: {rep_pd};",
-                    " Data Source: {rep_pd}{msd_version} MSD")
 
   ## MER Data - get the latest MSD PSNU x IM file
     file_psnu_im <- return_latest(
@@ -56,6 +53,14 @@
         pattern = "^MER_.*_PSNU_IM_.*_\\d{8}_v\\d{1}_\\d{1}.zip$",
         recursive = FALSE
       )
+
+  ## msd version
+    msd_version <- ifelse(str_detect(file_psnu_im, ".*_\\d{8}_v1_\\d"), "i", "c")
+    msd_version <- paste0(rep_pd, msd_version)
+
+  ## Output Caption
+    caption <- glue("Reporting Period: {rep_pd};",
+                    " Data Source: {rep_pd}{msd_version} MSD")
 
   ## Shapefile path
     file_shp <- return_latest(
