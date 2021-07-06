@@ -66,6 +66,10 @@
     recursive = FALSE
   )
 
+  # msd version
+  msd_version <- ifelse(str_detect(file_psnu_im, ".*_\\d{8}_v1_\\d"), "i", "c")
+  msd_version <- paste0(rep_pd, msd_version)
+
   # Shapefile path
   file_shp <- return_latest(
     folderpath = dir_geodata,
@@ -90,7 +94,8 @@
 
     df_tx <- df %>%
       filter(countryname == cntry) %>%
-      dplyr::select(-c(operatingunit, countryname))
+      dplyr::select(-c(operatingunit, countryname)) %>%
+      clean_psnu()
 
     # admin 0 and 1 for basemap
     admin0 <- spdf %>%
@@ -100,6 +105,10 @@
     admin1 <- spdf %>%
       filter(operatingunit == cntry,
              label == "snu1")
+
+    admin_psnu <- spdf %>%
+      filter(operatingunit == cntry,
+             label == "prioritization")
 
     # Produce basemap
     basemap <- terrain_map(countries = admin0,
@@ -112,8 +121,16 @@
     spdf_tx <- spdf %>%
       filter(countryname == cntry,
              label == 'prioritization') %>%
-      left_join(df_tx, by = c("uid" = "psnuuid"), keep = TRUE) %>%
-      filter(!is.na(tx_curr), tx_curr > 0) %>%
+      left_join(df_tx, by = c("uid" = "psnuuid")) %>%
+      filter(!is.na(tx_curr))
+
+    # Check for valid data
+    if (nrow(spdf_tx) == 0) {
+      message(glue("No data found for {cntry}"))
+      return(NULL)
+    }
+
+    spdf_tx <- spdf_tx %>%
       mutate(
         tx_curr_color = if_else(ovc_serv == 0, usaid_red, grey90k),
         tx_curr_label = paste0("<span style = 'color: ",
@@ -125,12 +142,6 @@
                                comma(tx_curr, accuracy = 1),
                                "</span>")
       )
-
-    # Check for valid data
-    if (nrow(spdf_tx) == 0) {
-      message(glue("No data found for {cntry}"))
-      return(NULL)
-    }
 
     # Produce thematic maps
 
@@ -153,7 +164,7 @@
       geom_sf(data = admin0, fill = NA, size = .5, color = grey90k) +
       geom_sf_text(data = spdf_tx,
                    aes(label = psnu, color = tx_curr_color),
-                   size = 5) +
+                   size = 5, check_overlap = TRUE) +
       scale_color_identity() +
       labs(title = paste0(
              str_to_upper(cntry),
@@ -165,7 +176,7 @@
                              ifelse(agency != "",
                                     glue(" ({agency})"),
                                     " (All Agencies)")),
-           caption = paste0(glue("Source: MSD {rep_pd}"),
+           caption = paste0(glue("Source: MSD {msd_version}"),
                             " - Produced on ",
                             format(Sys.Date(), "%Y-%m-%d"),
                             "\nRed labels indicate no OVC Coverage")
@@ -178,12 +189,14 @@
     # # of CLHIV Outsite OVC PSNUs
 
     n_clhiv <- spdf_tx %>%
+      st_drop_geometry() %>%
       group_by(countryname) %>%
       summarise(across(tx_curr, sum, na.rm = TRUE)) %>%
       ungroup() %>%
       pull(tx_curr)
 
     nn_clhiv <- spdf_tx %>%
+      st_drop_geometry() %>%
       filter(ovc_serv == 0) %>%
       group_by(countryname) %>%
       summarise(across(tx_curr, sum, na.rm = TRUE)) %>%
@@ -205,7 +218,8 @@
       geom_sf_text(data = spdf_tx,
                    aes(label = comma(tx_curr, accuracy = 1),
                        color = tx_curr_color),
-                   size = 5, fontface = "bold") +
+                   size = 5, fontface = "bold",
+                   check_overlap = TRUE) +
       scale_color_identity() +
       labs(title = paste0(
              str_to_upper(cntry),
@@ -220,7 +234,7 @@
                              ifelse(agency != "",
                                     glue(" ({agency})"),
                                     " (All Agencies)")),
-           caption = paste0(glue("Source: MSD {rep_pd}"),
+           caption = paste0(glue("Source: MSD {rep_pd}{msd_version}"),
                             " - Produced on ",
                             format(Sys.Date(), "%Y-%m-%d"),
                             "\nRed labels indicate no OVC Coverage")
@@ -257,6 +271,7 @@
                  format(Sys.Date(), "%Y%m%d"),
                  ".png")),
         plot = map_clhiv)
+
     } else {
       print(map_psnus)
       print(map_clhiv)
@@ -368,9 +383,7 @@
                                 countryname,
                                 "</span>"),
            countryname = paste0(countryname, " (",
-                                comma(ovc_serv),
-                                #" / ",
-                                #comma(tx_curr),
+                                comma(ovc_serv, 1),
                                 ")")) %>%
     ggplot(data = .,
            aes(x = reorder(countryname, tx_curr),
@@ -383,8 +396,7 @@
     labs(x = "", y = "",
          title = "OVC COVERAGE FOR CHILDREN LIVING WITH HIV",
          subtitle = "Countries highlighted in red, have CLHIV with no OVC Programs",
-         caption = paste0("Source: MSD FY20Q4 - Produced on ",
-                          format(Sys.Date(), "%Y-%m-%d"))) +
+         caption = glue("Source: MSD {rep_pd}{msd_version} - Produced on {format(Sys.Date(), '%Y-%m-%d')}")) +
     si_style_xgrid() +
     theme(axis.text.y = element_markdown())
 
@@ -411,34 +423,23 @@
                                 countryname,
                                 "</span>"),
            countryname = paste0(countryname, " (",
-                                percent(ovc_cov, accuracy = 1),
+                                comma(tx_curr_psnu, accuracy = 1),
                                 ")")) %>%
     ggplot(data = .,
            aes(x = reorder(countryname, ovc_cov),
                y = ovc_cov,
                fill = ovc_cov)) +
     geom_col(show.legend = F) +
-    geom_text(aes(y = .02, label = tx_curr_psnu, color = tx_curr_color),
-              hjust = 0.5, size = 4) +
-    annotate("curve", x = 12, xend = 14, y = .65, yend = .58,
-             arrow = arrow(length = unit(5, "pt")), color = grey40k, size = .2) +
-    annotate("text", x = 12, y = .66,
-             label = "% of PSNUs with OVC Program",
-             hjust = "left", color = grey60k, size = 8) +
-    annotate("segment", x = 1, xend = 1, y = 0.2, yend = .03,
-             arrow = arrow(length = unit(5, "pt")), color = grey40k, size = .2) +
-    annotate("text", x = 1, y = .21,
-             label = "Total # of PSNUs with CLHIV",
-             hjust = "left", color = grey60k, size = 8) +
+    geom_text(aes(label = percent(ovc_cov, 1), color = tx_curr_color),
+              hjust = 1, nudge_y = -.005, size = 4) +
     scale_fill_si(discrete = F) +
-    scale_y_continuous(labels = percent, position = "right") +
+    scale_y_continuous(labels = percent, position = "right", expand = c(.001, .001)) +
     scale_color_identity() +
     coord_flip() +
     labs(x = "", y = "",
-         title = "COVERAGE OF OVC PROGRAMS FOR CHILDREN LIVING WITH HIV",
-         subtitle = "Lesotho and Haiti are the only OUs with OVC Programs in all PSNUs with PEDs (All Agencies)",
-         caption = paste0("Source: MSD FY20Q4 - Produced on ",
-                          format(Sys.Date(), "%Y-%m-%d"))) +
+         title = "% PSNU COVERAGE OF OVC PROGRAMS FOR CHILDREN LIVING WITH HIV",
+         #subtitle = "Lesotho and Haiti are the only OUs with OVC Programs in all PSNUs with PEDs (All Agencies)",
+         caption = glue("Source: MSD {msd_version} - Produced on {format(Sys.Date(), '%Y-%m-%d')}")) +
     si_style_xgrid() +
     theme(axis.text.x = element_text(size = 15),
           axis.text.y = element_markdown(size = 15),
@@ -449,9 +450,7 @@
   si_save(
     filename = file.path(
       dir_graphics,
-      paste0("FY21Q2 - All Agencies - OU Proportion of PSNUs with OVC Services - ",
-             format(Sys.Date(), "%Y%m%d"),
-             ".png")),
+      glue("{rep_pd} - All Agencies - OU Proportion of PSNUs with OVC Services - {format(Sys.Date(), '%Y%m%d')}.png")),
     plot = last_plot())
 
 
@@ -478,34 +477,23 @@
                                 countryname,
                                 "</span>"),
            countryname = paste0(countryname, " (",
-                                percent(ovc_cov, accuracy = 1),
+                                comma(tx_curr_psnu, accuracy = 1),
                                 ")")) %>%
     ggplot(data = .,
            aes(x = reorder(countryname, ovc_cov),
                y = ovc_cov,
                fill = ovc_cov)) +
     geom_col(show.legend = F) +
-    geom_text(aes(y = .02, label = tx_curr_psnu, color = tx_curr_color),
-              hjust = 0.5, size = 4) +
-    annotate("curve", x = 10, xend = 11, y = .65, yend = .58,
-             arrow = arrow(length = unit(5, "pt")), color = grey40k, size = .3) +
-    annotate("text", x = 10, y = .66,
-             label = "% of PSNUs with OVC Program",
-             hjust = "left", color = grey60k, size = 4) +
-    annotate("segment", x = 1, xend = 1, y = 0.3, yend = .03,
-             arrow = arrow(length = unit(5, "pt")), color = grey40k, size = .3) +
-    annotate("text", x = 1, y = .31,
-             label = "Total # of PSNUs with CLHIV",
-             hjust = "left", color = grey60k, size = 4) +
+    geom_text(aes(label = percent(ovc_cov, 1), color = tx_curr_color),
+              hjust = 1, nudge_y = -.005, size = 4) +
     scale_fill_si(discrete = F) +
-    scale_y_continuous(labels = percent, position = "right") +
+    scale_y_continuous(labels = percent, position = "right", expand = c(.01, .01)) +
     scale_color_identity() +
-    coord_flip() +
+    coord_flip(clip = "off") +
     labs(x = "", y = "",
-         title = "COVERAGE OF OVC PROGRAMS FOR CHILDREN LIVING WITH HIV",
-         subtitle = "Eswatini, Haiti, Kenya & Lesotho are the only OUs with OVC Programs in all PSNUs with PEDs (USAID)",
-         caption = paste0("Source: MSD FY20Q4 - Produced on ",
-                          format(Sys.Date(), "%Y-%m-%d"))) +
+         title = "% PSNU COVERAGE OF OVC PROGRAMS FOR CHILDREN LIVING WITH HIV",
+         #subtitle = "Eswatini, Haiti, Kenya & Lesotho are the only OUs with OVC Programs in all PSNUs with PEDs (USAID)",
+         caption = glue("Source: MSD {msd_version} - Produced on {format(Sys.Date(), '%Y-%m-%d')}")) +
     si_style_xgrid() +
     theme(axis.text.x = element_text(size = 15),
           axis.text.y = element_markdown(size = 15),
@@ -516,22 +504,20 @@
   si_save(
     filename = file.path(
       dir_graphics,
-      paste0("FY21Q2 - USAID - OU Proportion of PSNUs with OVC Services - ",
-             format(Sys.Date(), "%Y%m%d"),
-             ".png")),
+      glue("{rep_pd} - USAID - OU Proportion of PSNUs with OVC Services - {format(Sys.Date(), '%Y%m%d')}.png")),
     plot = last_plot())
 
   # Country map ----
 
-  # all agencies
-  df_ou_ovc_cov %>%
-    map_ovc4clhiv(spdf = spdf_pepfar,
-                  terr = terr,
-                  df = .,
-                  country = cntry,
-                  rep_pd = rep_pd)
-
-  # usaid only
+  # # all agencies
+  # df_ou_ovc_cov %>%
+  #   map_ovc4clhiv(spdf = spdf_pepfar,
+  #                 terr = terr,
+  #                 df = .,
+  #                 country = cntry,
+  #                 rep_pd = rep_pd)
+  #
+  # # usaid only
   df_usaid_ovc_cov %>%
     map_ovc4clhiv(spdf = spdf_pepfar,
                   terr = terr,
@@ -544,7 +530,6 @@
     filter(!str_detect(operatingunit, " Region$")) %>%
     distinct(countryname) %>%
     pull() %>%
-    #nth(21) %>% # Uganda has errors
     map(~map_ovc4clhiv(spdf = spdf_pepfar,
                        terr = terr,
                        df = df_ou_ovc_cov,
@@ -557,7 +542,6 @@
     filter(!str_detect(operatingunit, " Region$")) %>%
     distinct(countryname) %>%
     pull() %>%
-    #nth(20) %>% # Uganda has errors
     map(~map_ovc4clhiv(spdf = spdf_pepfar,
                        terr = terr,
                        df = df_usaid_ovc_cov,
