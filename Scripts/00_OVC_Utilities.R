@@ -608,8 +608,6 @@ map_ovctx_coverage <-
   spdf_adm1 <- spdf %>%
     filter(operatingunit %in% country, label == "snu1")
 
-
-
   # Append Program data to geo
   spdf_ovctx <- spdf %>%
     left_join(df_ovctx, by = c("uid" = "psnuuid")) %>%
@@ -640,7 +638,7 @@ map_ovctx_coverage <-
   map <- basemap +
     geom_sf(data = spdf_ovctx,
             aes(fill = ovc_group),
-            lwd = .3, color = grey10k) +
+            lwd = .3, color = grey10k, alpha = .7) +
     geom_sf(data = spdf_adm0, colour = grey10k, fill = NA, size = 2) +
     geom_sf(data = spdf_adm0, colour = grey90k, fill = NA, size = .75) +
     scale_fill_manual(values = ovc_items) +
@@ -697,16 +695,12 @@ map_mixed_coverage <-
     mixed_map <- basemap +
       geom_sf(data = spdf_ovctx,
               lwd = .3, fill = usaid_red,
-              color = grey10k, show.legend = F) +
+              color = grey10k, show.legend = F, alpha = .7) +
       geom_sf(data = spdf_adm0, colour = grey10k, fill = NA, size = 2) +
       geom_sf(data = spdf_adm0, colour = grey90k, fill = NA, size = .75) +
       labs(subtitle = "Mixed Targets") +
       si_style_map() +
-      theme(
-        plot.title = element_text(family = "Source Sans Pro", size = 14),
-        plot.subtitle = element_text(family = "Source Sans Pro", size = 12),
-        plot.caption = element_text(family = "Source Sans Pro", size = 8)
-      )
+      theme(plot.subtitle = element_text(family = "Source Sans Pro", size = 12))
 
     return(mixed_map)
   }

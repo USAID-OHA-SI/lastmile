@@ -1,9 +1,9 @@
 ##  PROJECT: LMA/Geospatial Distributions
 ##  AUTHOR:  B.Kagniniwa, G.Sarfaty & T.Essam | USAID
-##  PURPOSE: Geo-depiction of VL - % not covered
+##  PURPOSE: OVC Treatment Coverage
 ##  LICENCE: MIT
 ##  DATE:    2020-09-04
-##  UPDATED: 2021-03-02
+##  UPDATED: 2021-07-06
 
 # Libraries ----
 
@@ -21,6 +21,7 @@
     library(here)
     library(ICPIutilities)
     library(extrafont)
+    library(glue)
 
 # REQUIRED -------------------------------------------------------------------------------
 
@@ -64,6 +65,10 @@
         pattern = "^MER_.*_PSNU_IM_.*_\\d{8}_v\\d_\\d.zip$",
         recursive = FALSE
     )
+
+    # msd version
+    msd_version <- ifelse(str_detect(file_psnu_im, ".*_\\d{8}_v1_\\d"), "i", "c")
+    msd_version <- paste0(rep_pd, msd_version)
 
     ## Shapefile path
     file_shp <- return_latest(
@@ -113,7 +118,7 @@
                             age = "<20",
                             agency = "All Agencies",
                             var = "Proxy Coverage",
-                            source = "FY21Q2i") {
+                            source = "FY21Q2c") {
         # Params
         var <- str_replace_all({{var}}, "_", " ")
         agency <- {{agency}}
@@ -131,8 +136,6 @@
 
         return(caption)
     }
-
-
 
     #' Graphic file name
     #'
@@ -175,8 +178,6 @@
 
     ## MER PSNU Data
     df_psnu <- file_psnu_im %>% read_msd()
-
-    df_psnu %>% glimpse()
 
     ## Geodata
 
@@ -233,7 +234,7 @@
                      df_ovc = df_cntry,
                      terr_raster = terr,
                      rep_pd = rep_pd,
-                     caption = get_caption(cname))
+                     caption = get_caption(cname, source = msd_version))
 
 
     # Batch 1: OVC Proxy Coverage <20, All Agencies
@@ -256,8 +257,13 @@
             rep_pd = rep_pd,
             country = .x,
             age = "<20",
-            caption = get_caption(.x, age = "<20", agency = "All Agencies"),
-            filename = get_output_name(.x, age = "<20", agency = "All Agencies"),
+            caption = get_caption(.x,
+                                  age = "<20",
+                                  agency = "All Agencies",
+                                  source = msd_version),
+            filename = get_output_name(.x,
+                                       age = "<20",
+                                       agency = "All Agencies"),
             save = T))
 
     # Batch 2: OVC Proxy Coverage <15, All Agencies
@@ -279,8 +285,13 @@
             rep_pd = rep_pd,
             country = .x,
             age = "<15",
-            caption = get_caption(.x, age = "<15", agency = "All Agencies"),
-            filename = get_output_name(.x, age = "<15", agency = "All Agencies"),
+            caption = get_caption(.x,
+                                  age = "<15",
+                                  agency = "All Agencies",
+                                  source = msd_version),
+            filename = get_output_name(.x,
+                                       age = "<15",
+                                       agency = "All Agencies"),
             save = T))
 
     # Batch 3: OVC Proxy Coverage <20, USAID Only
@@ -302,8 +313,13 @@
             rep_pd = rep_pd,
             country = .x,
             age = "<20",
-            caption = get_caption(.x, age = "<20", agency = "USAID Only"),
-            filename = get_output_name(.x, age = "<20", agency = "USAID Only"),
+            caption = get_caption(.x,
+                                  age = "<20",
+                                  agency = "USAID Only",
+                                  source = msd_version),
+            filename = get_output_name(.x,
+                                       age = "<20",
+                                       agency = "USAID Only"),
             save = T))
 
     # Batch 4: OVC Proxy Coverage <15, USAID Only
@@ -325,8 +341,13 @@
             rep_pd = rep_pd,
             country = .x,
             age = "<15",
-            caption = get_caption(.x, age = "<15", agency = "USAID Only"),
-            filename = get_output_name(.x, age = "<15", agency = "USAID Only"),
+            caption = get_caption(.x,
+                                  age = "<15",
+                                  agency = "USAID Only",
+                                  source = msd_version),
+            filename = get_output_name(.x,
+                                       age = "<15",
+                                       agency = "USAID Only"),
             save = T))
 
 
@@ -350,36 +371,6 @@
         distinct(operatingunit) %>%
         pull()
 
-    cname <- cntries %>% nth(20)
-
-    df_cntry <- df_ovc_tx %>%
-        filter(operatingunit == cname)
-
-    heatmap_ovctx_coverage(df = df_cntry)
-
-    map_ovctx_coverage(spdf = spdf_pepfar,
-                       df_ovctx = df_cntry,
-                       terr_raster = terr)
-
-    map_mixed_coverage(spdf = spdf_pepfar,
-                       df_ovctx = df_cntry,
-                       terr_raster = terr)
-
-    ovctx_caption <- paste0(
-        "OHA/SIEI - Data Source: FY21Q2i MSD - USAID & CDC,
-                OVC_SERV_UNDER_18 & TX_CURR, Age < 20\n",
-        toupper(cntries %>% nth(1)), ", Produced on ",
-        format(Sys.Date(), "%Y%m%d")
-    )
-
-    viz_ovctx_coverage(spdf = spdf_pepfar,
-                       df_ovctx = df_cntry,
-                       terr_raster = terr,
-                       caption = ovctx_caption,
-                       save = F,
-                       filename = paste0(rep_pd, "_OVC_TX_Overlap_",
-                                         toupper(cname), "_",
-                                         format(Sys.Date(), "%Y%m%d"), ".png"))
 
     # Batch OVC/TX Coverage
     cntries %>%
@@ -388,7 +379,7 @@
             df_ovctx = df_ovc_tx %>% filter(operatingunit == .x),
             terr_raster = terr,
             caption = paste0(
-                "OHA/SIEI - Data Source: FY20Q4i MSD - USAID & CDC,
+                "OHA/SIEI - Data Source: ", msd_version, " MSD - USAID & CDC,
                 OVC_SERV_UNDER_18 & TX_CURR, Age < 20\n",
                 toupper(.x), ", Produced on ",
                 format(Sys.Date(), "%Y%m%d")
