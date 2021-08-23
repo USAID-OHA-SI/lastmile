@@ -3,31 +3,31 @@
 ##  PURPOSE: Geo-depiction of TX_ML [% of patients transferring out]
 ##  LICENCE: MIT
 ##  DATE:    2020-06-22
-##  UPDATE:  2021-06-11
+##  UPDATE:  2021-08-23
 
-# Dependancies----------------------------------------------------------
+# Dependancies ----
 
   library(tidyverse)
   library(readxl)
-  library(ICPIutilities)
+  library(gophr)
   library(sf)
-  library(here)
+  library(gisr)
   library(glamr)
   library(glitr)
-  library(gisr)
+  library(here)
   library(scales)
   library(RColorBrewer)
   library(patchwork)
   library(extrafont)
   library(glue)
 
-  source("./Scripts/00_Geo_Utilities.R")
+  #source("./Scripts/00_Geo_Utilities.R")
 
 # SETUP & Make data folders are excluded from git commits
 
   #glamr::folder_setup()
 
-# GLOBALS -------------------------------------------------------------
+# GLOBALS ----
 
   ## Data & Output folders
   dir_data <- "Data"
@@ -38,6 +38,10 @@
   dir_merdata <- si_path("path_msd")
   dir_terr <- si_path("path_raster")
 
+  ## GDRIVE
+  gdrive_tx_ml <- "1HVtUJZskoWnNN2lcnIhKmEwgrfy5rK0z"
+
+
   ## Reporting Filters
   rep_agency = "USAID"
   rep_agencies <- c("USAID", "HHS/CDC")
@@ -46,39 +50,8 @@
 
   ml_colors <- c(genoa, moody_blue, golden_sand, old_rose)
 
-  rep_fy <- 2021
-
-  rep_qtr <- 2
-
-  rep_fy2 <- rep_fy %>%
-    as.character() %>%
-    str_sub(3,4) %>%
-    paste0("FY", .)
-
-  rep_fys <- c(rep_fy - 1, rep_fy)
-
-  rep_fys2 <- rep_fys %>%
-    as.character() %>%
-    str_sub(3,4) %>%
-    paste0("FY", .)
-
-  rep_pd <- rep_fy %>%
-    as.character() %>%
-    str_sub(3,4) %>%
-    paste0("FY", ., "Q", rep_qtr)
-
-  rep_ref_pd <- rep_fys %>%
-    first() %>%
-    str_sub(3,4) %>%
-    paste0("FY", ., "Q4")
-
-  rep_init_pd <- rep_fys %>%
-    first() %>%
-    str_sub(3,4) %>%
-    paste0("FY", ., "Q1")
-
-  rep_pds <- c(rep_ref_pd, rep_pd)
-  rep_pds2 <- c(rep_init_pd, rep_pd)
+  # Reporting periods
+  source("./Scripts/00_Quarterly_Updates.R")
 
   # MER Data - get the latest MSD PSNU x IM file
   file_psnu_im <- return_latest(
@@ -89,6 +62,11 @@
 
   # MSD File version
   msd_version <- ifelse(str_detect(file_psnu_im, ".*_\\d{8}_v1_\\d"), "i", "c")
+
+  dir_graphics %<>% paste0("/", rep_pd, msd_version)
+
+  gdrive_dir <- rep_pd %>%
+    paste0(msd_version)
 
   # Shapefile path
   file_shp <- return_latest(
@@ -101,8 +79,10 @@
 
   #' Extract TX_ML from MER PSNU Dataset
   #'
-  #' @param fy fiscal year
+  #' @param .data    PSNU x IM data
+  #' @param fy       fiscal year
   #' @param snu_prio snuprioritization
+  #' @param mechs    List of mechanisms
   #'
   extract_tx_ml <- function(.data,
                             fy = "2020",
@@ -207,8 +187,6 @@
       df <- df %>%
         filter(fundingagency %in% {{agency}})
     }
-
-    print(df %>% distinct(indicator))
 
     # Rest of munging calculation
     df <- df %>%
@@ -344,8 +322,6 @@
       dplyr::filter(!is.na(otherdisagg)) %>%
       mutate(prct_color = if_else(prct <= .3, glitr::grey80k, glitr::grey10k))
 
-    # print(spdf_tx_ml %>% glimpse())
-
     if (!is.null(disagg)) {
       spdf_tx_ml <- spdf_tx_ml %>%
         filter(otherdisagg == {{disagg}})
@@ -399,10 +375,8 @@
     gviz <- gviz  +
       si_style_map() +
       theme(
-        strip.text = element_text(family = "Source Sans Pro", face = "bold"),
-        plot.title = element_text(family = "Source Sans Pro", face = "bold", color = grey80k),
-        plot.subtitle = element_text(family = "Source Sans Pro", margin = unit(c(1,1,10,1), 'pt')),
-        plot.caption = element_text(family = "Source Sans Pro", face = "italic")
+        axis.title = element_blank(),
+        legend.position = "bottom"
       )
 
     return(gviz)
@@ -437,12 +411,6 @@
   ## PSNUxIMs
   df_psnu <- file_psnu_im %>% read_msd()
 
-  df_psnu %>%
-    filter(indicator == "TX_ML") %>%
-    distinct(fiscal_year, standardizeddisaggregate, otherdisaggregate) %>%
-    arrange(desc(fiscal_year), standardizeddisaggregate) %>%
-    prinf()
-
   ## Raster data
   terr <- gisr::get_raster(terr_path = dir_terr)
 
@@ -469,15 +437,15 @@
     clean_psnu()
 
 
-# EXTRACT & VIZ
+# VIZ ----
 
-  caption <- glue("Source: {rep_pd}{msd_version} MSD, Produced by OHA/SIEI on {format(Sys.Date(), '%Y-%m-%d')}")
+  caption <- glue("Source: {rep_pd}{msd_version} MSD, Produced by OHA/SIEI/SI/Core Analytics on {format(Sys.Date(), '%Y-%m-%d')}")
 
   ## Batch processing
   df_tx_ml %>%
     filter(str_detect(operatingunit, " Region$", negate = TRUE)) %>%
     distinct(operatingunit) %>%
-    pull() %>%
+    pull() %>% #first() %>%
     map(function(country) {
 
       # filter data
@@ -501,8 +469,22 @@
                                                     size = 7, hjust = 1))
         )
 
+      cleaned_country <- country %>%
+        str_remove("'") %>%
+        str_to_upper()
+
       ggsave(here(dir_graphics,
-                  glue("{rep_pd} - {str_to_upper(country)}_TX_ML_InterruptionInTreatment_{format(Sys.Date(), '%Y%m%d')}.png")),
+                  glue("{rep_pd} - {cleaned_country}_TX_ML_InterruptionInTreatment_{format(Sys.Date(), '%Y%m%d')}.png")),
              plot = viz,
              scale = 1.2, dpi = 310, width = 10, height = 7, units = "in")
     })
+
+# UPLOAD TO GDRIVE ----
+
+  dir_graphics %>%
+    list.files(pattern = paste0("^", rep_pd, " - .*_TX_ML_InterruptionInTreatment_\\d{8}.png$"),
+               full.names = TRUE) %>% #first() %>%
+    str_replace("'", "") %>%
+    export_drivefile(filename = .,
+                     to_drive = gdrive_tx_ml,
+                     to_folder = gdrive_dir)
