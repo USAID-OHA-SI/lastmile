@@ -413,7 +413,7 @@ map_viralload <-
       dplyr::filter(!is.na(VLnC))
 
     # Basemap
-    base_map <- terrain_map(countries = lookup_country(cntry),
+    base_map <- terrain_map(countries = df_geo0,
                             adm0 = df_geo0,
                             adm1 = df_geo1,
                             mask = TRUE,
@@ -535,31 +535,37 @@ map_viralload <-
     if (caption == TRUE) {
       theme_map <- theme_map +
         labs(
+          x = "",
+          y = "",
           title = get_title(var = vl_var, peds = peds_title),
-          caption = get_caption(country, var = vl_var)
+          caption = get_caption(country, rep_pd = msd_caption, var = vl_var)
         )
     }
     else {
       theme_map <- theme_map +
-        labs(title = get_title(var = vl_var, peds = peds_title))
+        labs(x = "",
+             y = "",
+             title = get_title(var = vl_var, peds = peds_title))
     }
 
     # Update legend size and position
     theme_map <- theme_map +
+      si_style_map() +
       theme(
         plot.title = element_text(family = "Source Sans Pro", size = 10),
         plot.subtitle = element_text(family = "Source Sans Pro", size = 8),
-        plot.caption = element_text(family = "Source Sans Pro", size = 5),
+        plot.caption = element_text(family = "Source Sans Pro", size = 6),
+        legend.text = element_text(family = "Source Sans Pro", size = 6),
         legend.position =  "bottom",
         legend.direction = "horizontal",
-        legend.key.width = ggplot2::unit(1.5, "cm"),
-        legend.key.height = ggplot2::unit(.5, "cm")
+        legend.key.width = ggplot2::unit(1.3, "cm"),
+        legend.key.height = ggplot2::unit(.4, "cm")
       )
 
     # Save map
     if (save == TRUE) {
       si_save(
-        here::here("Graphics", get_output_name(country, rep_pd = pd, var = vl_var)),
+        here::here(dir_graphics, get_output_name(country, rep_pd = pd, var = vl_var)),
         plot = theme_map
       )
     }
@@ -651,7 +657,8 @@ map_viralloads <-
     # ALL
     m_all <- (m_vlc + m_vlnc + m_vls) +
       plot_layout(widths = c(1, 1, 1)) +
-      plot_annotation(caption = get_caption(country))
+      plot_annotation(caption = get_caption(country, rep_pd = msd_caption),
+                      theme = theme(plot.caption = element_text(family = "Source Sans Pro", size = 6),))
 
     #print(m_all)
 
@@ -660,7 +667,7 @@ map_viralloads <-
       print(m_all)
 
       si_save(
-        here("Graphics",
+        here(dir_graphics,
              get_output_name(country, rep_pd = pd, var = "VL", agency = agency)),
         plot = m_all)
     }
@@ -743,9 +750,10 @@ map_peds_viralloads <-
     if (save == TRUE) {
       ggsave(
         here(
-          "Graphics",
+          dir_graphics,
           str_replace(
-            get_output_name(country, var = "VLC_S", agency = agency),
+            get_output_name(country, rep_pd = rep_pd,
+                            var = "VLC_S", agency = agency),
             "_ViralLoad_",
             "_ViralLoad_PEDS_")),
         plot = m_all,
@@ -813,7 +821,7 @@ map_generic <-
       filter(!is.na({{mapvar}}))
 
     # Basemap
-    base_map <- terrain_map(countries = lookup_country(country),
+    base_map <- terrain_map(countries = df_geo0,
                             adm0 = df_geo0,
                             adm1 = df_geo1,
                             mask = TRUE,
@@ -985,8 +993,8 @@ map_vlc_eid <-
       plot_annotation(
         caption = paste0(
           "OHA/SIEI - Data Source: MSD ",
-          rep_pd,
-          "i_",
+          msd_caption,
+          "_",
           cntry,
           "_VLC + EID \n",
           "Produced on ",
@@ -1004,8 +1012,8 @@ map_vlc_eid <-
 
       ggsave(
         here(
-          "Graphics",
-          get_output_name(cntry, var = "VL_EID_Coverage")
+          dir_graphics,
+          get_output_name(cntry, rep_pd = rep_pd, var = "VL_EID_Coverage")
         ),
         plot = m_all,
         scale = 1.2,
@@ -1074,7 +1082,7 @@ viz_vls_tld <-
       left_join(df_vl, by = c("uid" = "psnuuid"))
 
     # Get basemap
-    basemap <- terrain_map(countries = lookup_country(cntry),
+    basemap <- terrain_map(countries = spdf_adm0,
                            adm0 = spdf_adm0,
                            adm1 = spdf_adm1,
                            mask = TRUE,
@@ -1188,3 +1196,4 @@ viz_vls_tld <-
 
     return(viz)
 }
+

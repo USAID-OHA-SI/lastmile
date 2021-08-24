@@ -298,7 +298,7 @@
            stock_level = case_when(
              tx_length == 0 ~ "Stockout",
              tx_length > 0 ~ "Available",
-             TRUE ~ "Stoke not reported",
+             TRUE ~ "Stock not reported",
            )) %>%
     relocate(value, .after = last_col())
 

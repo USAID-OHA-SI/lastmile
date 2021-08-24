@@ -20,9 +20,8 @@
   library(patchwork)
   library(ggrepel)
   library(here)
-  library(ICPIutilities)
+  library(gophr)
   library(extrafont)
-  library(viridis)
   library(tidytext)
 
 # GLOBALS ----
@@ -37,12 +36,14 @@
   dir_terr <- si_path("path_raster")
   dir_merdata <- si_path("path_msd")
 
+  gdrive_tx_vl <- "1OOBguVY-NTPm7ulF9NF1JHx3tNkVvcpS"
+  gdrive_tx_peds <- "1WMxJ1YQzSFKSGyGYVBU-LjsPwsTLVJlZ"
 
   ## Reporting Filters
   rep_agency = c("USAID", "HHS/CDC")
 
   rep_fy = 2021
-  rep_qtr = 2
+  rep_qtr = 3
 
   rep_pd = rep_fy %>%
     as.character() %>%
@@ -66,11 +67,16 @@
   # MSD File version
   msd_version <- ifelse(str_detect(file_psnu_im, ".*_\\d{8}_v1_\\d"), "i", "c")
 
+  msd_caption <- paste0(rep_pd, msd_version)
+
+  dir_graphics %<>%
+    paste0("/", rep_pd, msd_version)
+
 # FUNCTIONS ---------------------------------------------------------
 
 ## Utility functions
 source("./Scripts/00_Utilities.R")
-source("./Scripts/00_Geo_Utilities.R")
+#source("./Scripts/00_Geo_Utilities.R")
 source("./Scripts/00_VL_Utilities.R")
 source("./Scripts/00_ML_Utilities.R")
 
@@ -170,19 +176,19 @@ get_output_name <-
            agency = TRUE) {
 
   name <- paste0(rep_pd,
-                 "_ViralLoad_",
-                 toupper({{var}}),
-                 "_")
+                 " - ",
+                 str_remove(toupper({{country}}), "'"))
 
   if (!agency) {
-    name <- paste0(name, "USAID_")
+    name <- paste0(name, "_USAID")
   }
 
-  name <- paste0(name, toupper({{country}}),
+  name <- paste0(name,
+                 "_ViralLoad_",
+                 toupper({{var}}),
                  "_",
                  format(Sys.Date(), "%Y%m%d"),
-                 ".png"
-  )
+                 ".png")
 
   return(name)
 }
@@ -190,59 +196,10 @@ get_output_name <-
 
 # DATA --------------------------------------------------------------
 
-## MER PSNU Data
-df_psnu <- read_msd(file_psnu_im)
+  ## MER PSNU Data
+  df_psnu <- read_msd(file_psnu_im)
 
-## MER Data Munging
-
-## Filter & Summarize
-df_vl <- extract_viralload(df_msd = df_psnu,
-                           rep_agency = rep_agency,
-                           rep_fy = rep_fy,
-                           rep_pd = rep_qtr)
-
-
-## VL PEDs
-df_vl_u15 <- extract_viralload(df_msd = df_psnu,
-                               rep_agency = rep_agency,
-                               rep_fy = rep_fy,
-                               rep_pd = rep_qtr,
-                               peds = TRUE)
-
-
-#PEDs - EID
-df_eid <- extract_eid_viralload(df_msd = df_psnu,
-                                rep_agency = rep_agency,
-                                rep_fy = rep_fy,
-                                rep_pd = rep_qtr)
-
-
-# TX_ML -- aggregate bad events then divide by TX_CURR_lagged_1
-# Numerator: Number of patients not retained on ART (LTFU, Died, Stopped)
-# Denominator: TX_CURR_lag1 + TX_NEW_curr + TX_RTT
-
-df_tx_ml <- extract_tx_ml(df_msd = df_psnu,
-                          rep_agency = rep_agency,
-                          rep_fy = rep_fy,
-                          rep_pd = rep_qtr)
-
-
-# TX_PLP => DO NOT RUN in Qtr1
-df_tx_bad <- extract_tx_plp(
-  df_msd = df_psnu,
-  rep_agency = c("USAID", "HHS/CDC"),
-  rep_fy = rep_fy,
-  rep_pd = rep_qtr
-)
-
-# Test calculations/results
-df_tx_bad %>%
-  filter(operatingunit == "Zambia") %>%
-  group_by(psnu) %>%
-  summarise(sum = (TX_ML_PLP))
-
-
-## Geodata ---
+  ## Geodata
 
   ## Terrain Raster
   terr <- get_raster(terr_path = dir_terr)
@@ -257,6 +214,56 @@ df_tx_bad %>%
 
   spdf_pepfar <- spdf_pepfar %>%
     left_join(df_attrs, by = c("uid" = "id"))
+
+# MUNGING ----
+
+  ## Filter & Summarize
+  df_vl <- extract_viralload(df_msd = df_psnu,
+                             rep_agency = rep_agency,
+                             rep_fy = rep_fy,
+                             rep_pd = rep_qtr)
+
+
+  ## VL PEDs
+  df_vl_u15 <- extract_viralload(df_msd = df_psnu,
+                                 rep_agency = rep_agency,
+                                 rep_fy = rep_fy,
+                                 rep_pd = rep_qtr,
+                                 peds = TRUE)
+
+
+  #PEDs - EID
+  df_eid <- extract_eid_viralload(df_msd = df_psnu,
+                                  rep_agency = rep_agency,
+                                  rep_fy = rep_fy,
+                                  rep_pd = rep_qtr)
+
+
+  # TX_ML -- aggregate bad events then divide by TX_CURR_lagged_1
+  # Numerator: Number of patients not retained on ART (LTFU, Died, Stopped)
+  # Denominator: TX_CURR_lag1 + TX_NEW_curr + TX_RTT
+
+  df_tx_ml <- extract_tx_ml(df_msd = df_psnu,
+                            rep_agency = rep_agency,
+                            rep_fy = rep_fy,
+                            rep_pd = rep_qtr)
+
+
+  # TX_PLP => DO NOT RUN in Qtr1
+  df_tx_bad <- extract_tx_plp(
+    df_msd = df_psnu,
+    rep_agency = c("USAID", "HHS/CDC"),
+    rep_fy = rep_fy,
+    rep_pd = rep_qtr
+  )
+
+  # Test calculations/results
+  df_tx_bad %>%
+    filter(operatingunit == "Zambia") %>%
+    group_by(psnu) %>%
+    summarise(sum = (TX_ML_PLP))
+
+
 
 # VIZ --------------------------------------
 
@@ -289,7 +296,7 @@ df_tx_bad %>%
     distinct(operatingunit) %>%
     pull()
 
-  map_ous %>%
+  map_ous %>% nth(5) %>%
     map(.x, .f = ~ map_viralloads(
         spdf = spdf_pepfar,
         df = df_vl,
@@ -300,6 +307,20 @@ df_tx_bad %>%
         facet_rows = 2
       )
     )
+
+  ## Move files to google folder
+  gdrive_vlbyagency <- gdrive_folder(name = paste0("VL_by_Agency/", msd_caption),
+                             path = gdrive_tx_vl,
+                             add = TRUE)
+
+  dir_graphics %>%
+    list.files(pattern = paste0("^", rep_pd, " - .*_ViralLoad_VL_\\d{8}.png$"),
+               full.names = TRUE) %>%
+    map_dfr(~drive_upload(.x,
+                      path = as_id(gdrive_vlbyagency),
+                      name = basename(.x),
+                      type = "png",
+                      overwrite = TRUE))
 
 
   ## Batch: ALL USAID Only
@@ -320,6 +341,20 @@ df_tx_bad %>%
       agency = FALSE
     ))
 
+  ## Move files to google folder
+  gdrive_vlusaid <- gdrive_folder(name = msd_caption,
+                                  path = gdrive_tx_vl,
+                                  add = TRUE)
+
+  dir_graphics %>%
+    list.files(pattern = paste0("^", rep_pd, " - .*_USAID_ViralLoad_VL_\\d{8}.png$"),
+               full.names = TRUE) %>%
+    map_dfr(~drive_upload(.x,
+                          path = as_id(gdrive_vlusaid),
+                          name = basename(.x),
+                          type = "png",
+                          overwrite = TRUE))
+
   ## Batch: PEDS by Agency
   map_ous <- df_vl_u15 %>%
     filter(!str_detect(operatingunit, " Region$"),
@@ -339,6 +374,20 @@ df_tx_bad %>%
       )
     )
 
+  ## Move files to google folder
+  gdrive_vlpedsagency <- gdrive_folder(name = paste0("VL-by-Agency/", msd_caption),
+                                  path = gdrive_tx_peds,
+                                  add = TRUE)
+
+  dir_graphics %>%
+    list.files(pattern = paste0("^", rep_pd, " - .*_ViralLoad_PEDS_VLC_S_\\d{8}.png$"),
+               full.names = TRUE) %>%
+    map_dfr(~drive_upload(.x,
+                          path = as_id(gdrive_vlpedsagency),
+                          name = basename(.x),
+                          type = "png",
+                          overwrite = TRUE))
+
   ## Batch: PEDS USAID
   map_ous <- df_vl_u15 %>%
     filter(!str_detect(operatingunit, " Region$"),
@@ -357,6 +406,20 @@ df_tx_bad %>%
         agency = FALSE
       )
     )
+
+  ## Move files to google folder
+  gdrive_vlpedsusaid <- gdrive_folder(name = msd_caption,
+                                      path = gdrive_tx_peds,
+                                      add = TRUE)
+
+  dir_graphics %>%
+    list.files(pattern = paste0("^", rep_pd, " - .*_USAID_ViralLoad_PEDS_VLC_S_\\d{8}.png$"),
+               full.names = TRUE) %>%
+    map_dfr(~drive_upload(.x,
+                          path = as_id(gdrive_vlpedsusaid),
+                          name = basename(.x),
+                          type = "png",
+                          overwrite = TRUE))
 
 
   # Batch: VL PEDS  & EID Coverage
@@ -378,6 +441,20 @@ df_tx_bad %>%
         save_all = T
       )
     )
+
+  ## Move files to google folder
+  gdrive_vlpedseid <- gdrive_folder(name = paste0("VLC-EID/", msd_caption),
+                                      path = gdrive_tx_peds,
+                                      add = TRUE)
+
+  dir_graphics %>%
+    list.files(pattern = paste0("^", rep_pd, " - .*_ViralLoad_VL_EID_COVERAGE_\\d{8}.png$"),
+               full.names = TRUE) %>%
+    map_dfr(~drive_upload(.x,
+                          path = as_id(gdrive_vlpedseid),
+                          name = basename(.x),
+                          type = "png",
+                          overwrite = TRUE))
 
 
 # Batch: TX_ML_PLP map
