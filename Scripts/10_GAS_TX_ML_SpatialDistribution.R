@@ -62,11 +62,11 @@
 
   # MSD File version
   msd_version <- ifelse(str_detect(file_psnu_im, ".*_\\d{8}_v1_\\d"), "i", "c")
+  msd_caption <- paste0(rep_pd, msd_version)
 
   dir_graphics %<>% paste0("/", rep_pd, msd_version)
 
-  gdrive_dir <- rep_pd %>%
-    paste0(msd_version)
+  gdrive_dir <- rep_pd %>% paste0(msd_version)
 
   # Shapefile path
   file_shp <- return_latest(
@@ -481,10 +481,24 @@
 
 # UPLOAD TO GDRIVE ----
 
+  gdrive_dir <- msd_caption %>%
+    gdrive_folder(name = .,
+                  path = gdrive_tx_ml)
+
+  # dir_graphics %>%
+  #   list.files(pattern = paste0("^", rep_pd, " - .*_TX_ML_InterruptionInTreatment_\\d{8}.png$"),
+  #              full.names = TRUE) %>%
+  #   export_drivefile(filename = .,
+  #                    to_drive = gdrive_tx_ml,
+  #                    to_folder = msd_caption,
+  #                    name = basename(.),
+  #                    type = "png")
+
   dir_graphics %>%
     list.files(pattern = paste0("^", rep_pd, " - .*_TX_ML_InterruptionInTreatment_\\d{8}.png$"),
-               full.names = TRUE) %>% #first() %>%
-    str_replace("'", "") %>%
-    export_drivefile(filename = .,
-                     to_drive = gdrive_tx_ml,
-                     to_folder = gdrive_dir)
+               full.names = TRUE) %>%
+    map_dfr(~drive_upload(.x,
+                      path = as_id(gdrive_dir),
+                      name = basename(.x),
+                      type = "png",
+                      overwrite = TRUE))

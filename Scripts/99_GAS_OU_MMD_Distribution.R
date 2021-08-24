@@ -3,7 +3,7 @@
 ##  PURPOSE: MMD Distribution
 ##  LICENCE: MIT
 ##  DATE:    2021-03-02
-##  UPDATED: 2021-06-30
+##  UPDATED: 2021-08-23
 
 
 # DEPENDENCIES ------------------------------------------------------------
@@ -23,7 +23,7 @@
   library(ICPIutilities)
   library(rnaturalearth)
 
-  source("./Scripts/00_Geo_Utilities.R")
+  #source("./Scripts/00_Geo_Utilities.R")
   source("./Scripts/00_VL_Utilities.R")
 
 # SETUP ----
@@ -37,39 +37,17 @@
   dir_terr <- si_path("path_raster")
   dir_merdata <- si_path("path_msd")
 
+  ## GDRIVE
+  gdrive_tx_mmd <- "1dlXUE8kapmqCvIyNN5tD5y_lRsnTFaxv"
+
   ## Reporting Filters
   rep_agency = "USAID"
   rep_agencies <- c("USAID", "HHS/CDC")
 
   cntry <- "Nigeria"
 
-  rep_fy = 2021
-
-  rep_qtr = 2
-
-  rep_fy2 = rep_fy %>%
-    as.character() %>%
-    str_sub(3,4) %>%
-    paste0("FY", .)
-
-  rep_fys = c(rep_fy - 1, rep_fy)
-
-  rep_fys2 = rep_fys %>%
-    as.character() %>%
-    str_sub(3,4) %>%
-    paste0("FY", .)
-
-  rep_pd = rep_fy %>%
-    as.character() %>%
-    str_sub(3,4) %>%
-    paste0("FY", ., "Q", rep_qtr)
-
-  # Reference period: use last qtr of previous year
-  ref_rep_pd = rep_fys2 %>%
-    first() %>%
-    paste0(., "Q4")
-
-  rep_pds <- c(ref_rep_pd, rep_pd)
+  # Reporting periods
+  source("./Scripts/00_Quarterly_Updates.R")
 
   # MER Data - get the latest MSD PSNU x IM file
   file_psnu_im <- return_latest(
@@ -94,7 +72,14 @@
 
   # MSD File version
   msd_version <- ifelse(str_detect(file_psnu_im, ".*_\\d{8}_v1_\\d"), "i", "c")
-  msd_version <- paste0(rep_pd, msd_version)
+  msd_caption <- paste0(rep_pd, msd_version)
+
+  dir_graphics %<>%
+    paste0("/", rep_pd, msd_version)
+
+  gdrive_dir <- msd_version
+
+
 
 # FUNCTIONS ----
 
@@ -202,16 +187,66 @@
         #title = glue("MMD{len} SCALING UP IN AFRICA",
         #subtitle = "% Treatment by MMD Duration",
         caption = glue("Share of MMD{len} = TX_CURR[{len}] / TX_CURR",
-                         "\nSource: {rep_pds %>% last()} PSNU x IM MSD, Produced on ",
+                         "\nSource: {msd_caption} MSD, Produced by OHA/SIEI/SI/Core Analytics on ",
                          {format(Sys.Date(), "%Y-%m-%d")})) +
       si_style_map() +
-      theme(plot.title = element_text(family = "Source Sans Pro", color = usaid_red),
-            plot.subtitle = element_text(family = "Source Sans Pro", color = usaid_red),
-            plot.caption = element_text(family = "Source Sans Pro"))
+      theme(
+        # plot.title = element_text(family = "Source Sans Pro", color = usaid_red),
+        # plot.subtitle = element_text(family = "Source Sans Pro", color = usaid_red),
+        # plot.caption = element_text(family = "Source Sans Pro"),
+        axis.title = element_blank(),
+        legend.position = "bottom"
+      )
   }
 
 
+  #' @title MMD VIZ
+  #'
+  mmd_viz <- function(cntry, mmd_len) {
 
+    # prep len for output filename
+    len <- case_when(
+      str_detect(mmd_len, "[+]$") ~ str_replace(mmd_len, "[+]", "plus"),
+      str_detect(mmd_len, "^[<]") ~ str_replace(mmd_len, "[<]", "lt"),
+      TRUE ~ mmd_len
+    )
+
+    # create map: pass global vars thru mmd_viz function
+    map <- mmd_map(df = df_mmd_share,
+                   spdf = spdf_pepfar,
+                   terr = terr,
+                   country = cntry,
+                   rep_pds = rep_pds,
+                   len = mmd_len,
+                   pal = "genoas")
+
+    # Export map
+    if (!is.null(map)) {
+
+      map <- map +
+        plot_annotation(
+          title = glue("{str_to_upper(cntry)} - {rep_pd} MMD DISTRIBUTION"),
+          subtitle = glue("% MMD{mmd_len} from {rep_ref_pd} to {rep_pd}"),
+          theme = theme(plot.title = element_text(hjust = 0),
+                        plot.subtitle = element_text(hjust = 0))
+        )
+
+      cleaned_country <- cntry %>%
+        str_remove("'") %>%
+        str_to_upper()
+
+      si_save(
+        filename = file.path(
+          dir_graphics,
+          glue("{rep_pd}_{str_to_upper(cleaned_country)}_MMD{len} Distribution_{format(Sys.Date(), '%Y%m%d')}.png")),
+        plot = map,
+        width = 9.54,
+        height = 5,
+        scale = 1.4)
+    }
+
+    return(mmd_len)
+  }
 
 # DATA ----
 
@@ -220,9 +255,10 @@
 
   # SPATIAL DATA
 
-  ## PEPFAR Boundaries
+  ## Raster
   terr <- gisr::get_raster(terr_path = dir_terr)
 
+  ## PEPFAR Boundaries
   spdf_pepfar <- file_shp %>% sf::read_sf()
 
   df_attrs <- gisr::get_ouuids() %>%
@@ -264,11 +300,7 @@
              psnu, psnuuid, otherdisaggregate) %>%
     summarise_at(vars(value), sum, na.rm = TRUE) %>%
     ungroup() %>%
-    filter(period %in% c(ref_rep_pd, rep_pd))
-
-  df_mmd %>% glimpse()
-
-  df_mmd %>% distinct(otherdisaggregate)
+    filter(period %in% c(rep_ref_pd, rep_pd))
 
   # Track MMD 3+ for the last 2 Qtrs
   df_mmd_geq3 <- df_mmd %>%
@@ -332,48 +364,101 @@
     distinct(operatingunit) %>%
     pull()
 
+  # Create OU x MMD Lenght Table
+  df_cntries <- tibble(ou = rep(cntries, length(mmds))) %>%
+    group_by(ou) %>%
+    mutate(mmd = mmds) %>%
+    ungroup()
+
+  # Test purrr::pmap
+
+  # df_cntries %>% pmap(paste)
+  #
+  # df_cntries %>%
+  #   filter(ou == "Zambia") %>%
+  #   pmap(~mmd_viz(.x, .y))
+  #
+  # df_cntries %>%
+  #   filter(ou == "Zambia") %>%
+  #   mutate(idx = row_number(),
+  #          tx_length = "6+") %>%
+  #   pmap(~mmd_viz(..1, ..4))
+
+  df_cntries %>%
+    pmap(~mmd_viz(.x, .y))
+
   # Map of MMD
   # TODO:
   # Create a cross3 of OU/MMD Len and use pmap() or pwalk
-  cntries %>%
-    map2("6+", function(cntry, mmd_len) {
-    #map2("3+", function(cntry, mmd_len) {
-    #map2("3-5", function(cntry, mmd_len) {
-    #map2("<3", function(cntry, mmd_len) {
+  # cntries %>%
+  #   map2("6+", function(cntry, mmd_len) {
+  #   #map2("3+", function(cntry, mmd_len) {
+  #   #map2("3-5", function(cntry, mmd_len) {
+  #   #map2("<3", function(cntry, mmd_len) {
+  #
+  #     len <- case_when(
+  #       str_detect(mmd_len, "[+]$") ~ str_replace(mmd_len, "[+]", "plus"),
+  #       str_detect(mmd_len, "^[<]") ~ str_replace(mmd_len, "[<]", "lt"),
+  #       TRUE ~ mmd_len
+  #     )
+  #
+  #     map <- mmd_map(df = df_mmd_share,
+  #                    spdf = spdf_pepfar,
+  #                    terr = terr,
+  #                    country = cntry,
+  #                    rep_pds = rep_pds,
+  #                    len = mmd_len,
+  #                    pal = "genoas")
+  #
+  #     if (!is.null(map)) {
+  #
+  #       map <- map +
+  #         plot_annotation(
+  #           title = glue("{str_to_upper(cntry)} - {rep_pd} MMD DISTRIBUTION"),
+  #           subtitle = glue("% MMD{mmd_len} from {rep_ref_pd} to {rep_pd}"),
+  #           theme = theme(plot.title = element_text(hjust = 0),
+  #                         plot.subtitle = element_text(hjust = 0))
+  #         )
+  #
+  #       cleaned_country <- cntry %>%
+  #         str_remove("'") %>%
+  #         str_to_upper()
+  #
+  #       si_save(
+  #         filename = file.path(
+  #           dir_graphics,
+  #           glue("{rep_pd}_{str_to_upper(cleaned_country)}_MMD{len} Distribution_{format(Sys.Date(), '%Y%m%d')}.png")),
+  #         plot = map,
+  #         width = 9.54,
+  #         height = 5,
+  #         scale = 1.4)
+  #     }
+  #
+  #     return(mmd_len)
+  #   })
 
-      len <- ifelse(str_detect(mmd_len, "[+]$"),
-                    str_replace(mmd_len, "[+]", "plus"),
-                    ifelse(str_detect(mmd_len, "^[<]"),
-                           str_replace(mmd_len, "[<]", "lt"),
-                           mmd_len))
 
-      map <- mmd_map(df = df_mmd_share,
-                     spdf = spdf_pepfar,
-                     terr = terr,
-                     country = cntry,
-                     rep_pds = rep_pds,
-                     len = mmd_len,
-                     pal = "genoas")
+# UPLOAD TO GDRIVE ----
 
-      if (!is.null(map)) {
+  gdrive_dir <- msd_caption %>%
+    gdrive_folder(name = .,
+                  path = gdrive_tx_mmd,
+                  add = TRUE)
 
-        map <- map +
-        plot_annotation(
-          title = glue("{str_to_upper(cntry)} - {rep_pd} MMD DISTRIBUTION"),
-          subtitle = glue("% MMD{mmd_len} from {ref_rep_pd} to {rep_pd}"),
-          theme = theme(plot.title = element_text(hjust = .5),
-                        plot.subtitle = element_text(hjust = .5))
-        )
+  # dir_graphics %>%
+  #   list.files(pattern = paste0("^", rep_pd, "_.*_MMD.* Distribution_\\d{8}.png$"),
+  #              full.names = TRUE) %>%
+  #   export_drivefile(filename = .,
+  #                    to_drive = gdrive_tx_mmd,
+  #                    to_folder = msd_caption,
+  #                    name = basename(.),
+  #                    type = "png")
 
-        si_save(
-          filename = file.path(
-            dir_graphics,
-            glue("{rep_pd}_MMD{len} Distribution_{str_to_upper(cntry)}_{format(Sys.Date(), '%Y%m%d')}.png")),
-          plot = map,
-          width = 9.54,
-          height = 5,
-          scale = 1.4)
-      }
-
-      return(mmd_len)
-    })
+  dir_graphics %>%
+    list.files(pattern = paste0("^", rep_pd, "_.*_MMD.* Distribution_\\d{8}.png$"),
+               full.names = TRUE) %>%
+    map(~drive_upload(.x,
+                      path = as_id(gdrive_dir),
+                      name = basename(.x),
+                      type = "png",
+                      overwrite = TRUE))
