@@ -3,6 +3,7 @@
 ##  PURPOSE: Geo-depiction of VL - % not covered
 ##  LICENCE: MIT
 ##  DATE:    2020-12-07
+##  UPDATED: 2021-08-25
 
 
 # LIBRARIES --------------------------------
@@ -19,14 +20,15 @@
   library(scales)
   library(patchwork)
   library(here)
-  library(ICPIutilities)
+  library(gophr)
   library(extrafont)
+  library(glue)
 
 # REQUIRED -----------------------------------
 
   ## Dependencies
   source("./Scripts/00_Utilities.R")
-  source("./Scripts/00_Geo_Utilities.R")
+  #source("./Scripts/00_Geo_Utilities.R")
   source("./Scripts/00_VL_Utilities.R")
 
 # GLOBALS ------------------------------------
@@ -40,19 +42,23 @@
   dir_terr <- "../../GEODATA/RASTER"
   dir_merdata <- "../../MERDATA"
 
+  gdrive_tx_tld <- "1n66I1qe_9GH93MxSjq-Hke9hwBIn01tJ"
+
   ## Reporting Filters
   rep_agency <- c("USAID", "HHS/CDC")
 
-  rep_fy = c(2020, 2021)
+  rep_fy = 2021
+  rep_fys = rep_fy %>% c(.-1, .)
 
-  rep_pd = "FY21Q2"
+  rep_qtr = 2
 
-  caption = " - Data Source: FY21Q2i MSD, VLS = (TX_PVLS_N/TX_PVLS_D)
-    ARV Disp. adjusted for Months of Treatments based on pill count
-    OHA/SIEI - Produced on "
+  rep_pd = rep_fy %>%
+    as.character() %>%
+    str_sub(3, 4) %>%
+    paste0("FY", ., "Q", rep_qtr)
 
-  ## Q4 MER Data
-  psnu_im <- "^MER_.*_PSNU_IM_.*_20210514_v1_1.zip$"
+  ## MSD Data file
+  psnu_im <- "^MER_.*_PSNU_IM_.*_\\d{8}_v\\d{1}_\\d{1}.zip$"
 
   ## File path + name
   file_psnu_im <- return_latest(
@@ -61,7 +67,26 @@
     recursive = TRUE
   )
 
-# DATA ---------------------------------------
+  ## File path + name
+  file_shp <- return_latest(
+    folderpath = dir_geodata,
+    pattern = "VcPepfarPolygons.*.shp",
+    recursive = TRUE
+  )
+
+  msd_version <- ifelse(str_detect(file_psnu_im, ".*_\\d{8}_v1_\\d"), "i", "c")
+
+  msd_caption <- paste0(rep_pd, msd_version)
+
+  caption = glue(" - Data Source: {msd_caption} MSD, VLS = (TX_PVLS_N/TX_PVLS_D)
+    ARV Disp. adjusted for Months of Treatments based on pill count
+    Produced by OHA/SIEI/SI/Core Analytics on ")
+
+  dir_graphics %<>%
+    paste0("/", rep_pd, msd_version)
+
+
+# DATA ----
 
   ## MSD PSNU x IM
   df_psnu <- file_psnu_im %>% read_msd()
@@ -82,10 +107,12 @@
   spdf_pepfar <- spdf_pepfar %>%
     left_join(df_attrs, by = c("uid" = "id"))
 
+# MUNGING ----
+
   ## VLS & TLD
   df_vls_tld <- extract_vls_tld(df_msd = df_psnu,
                                 rep_agency = rep_agency,
-                                rep_fy = rep_fy,
+                                rep_fys = rep_fys,
                                 rep_pd = rep_pd)
 
 
@@ -94,21 +121,6 @@
     filter(!is.na(VLS), !str_detect(operatingunit, " Region")) %>%
     distinct(operatingunit) %>%
     pull(operatingunit)
-
-
-  vls_cntries
-
-  # NE Countries
-  ne_countries = rnaturalearth::ne_countries(
-      scale = "medium",
-      returnclass = "sf"
-    ) %>%
-    st_set_geometry(NULL) %>%
-    dplyr::select(iso3 = sov_a3, sovereignt, admin)
-
-  # There are 3 countries with diff names
-  #[1] "Cote d'Ivoire" "Eswatini" "Tanzania"
-  setdiff(vls_cntries, ne_countries %>% pull(sovereignt))
 
 
 # VIZ -----------------
@@ -132,4 +144,16 @@
                                caption = caption,
                                save = TRUE))
 
+  # Upload files to google drive
+  gdrive_vls_tld <- gdrive_folder(name = msd_caption,
+                                  path = gdrive_tx_tld,
+                                  add = TRUE)
 
+  dir_graphics %>%
+    list.files(pattern = paste0("^", rep_pd, " - .*_VLS_TLD_TLE_Ratio_\\d{8}.png$"),
+               full.names = TRUE) %>%
+    map_dfr(~drive_upload(.x,
+                          path = as_id(gdrive_vls_tld),
+                          name = basename(.x),
+                          type = "png",
+                          overwrite = TRUE))

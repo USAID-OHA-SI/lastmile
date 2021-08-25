@@ -277,7 +277,7 @@ extract_eid_viralload <-
 extract_vls_tld <-
   function(df_msd,
            rep_agency = c("USAID","HHS/CDC"),
-           rep_fy = c("2020","2021"),
+           rep_fys = c("2020","2021"),
            rep_pd = "FY21Q2",
            peds = FALSE,
            lst_ous = NULL) {
@@ -285,13 +285,13 @@ extract_vls_tld <-
     # Variables
     df <- {{df_msd}}
     agencies <- {{rep_agency}}
-    fy <- {{rep_fy}}
+    fys <- {{rep_fys}}
 
     # Calculate VLS & TLD MOT
     df_vls_tld <- df %>%
       filter(
         fundingagency %in% agencies,
-        fiscal_year %in% fy,
+        fiscal_year %in% fys,
         indicator %in% c("TX_PVLS","SC_ARVDISP","TX_CURR"),
         standardizeddisaggregate %in% c("DispensedARVBottles",
                                         "Age/Sex/HIVStatus",
@@ -332,7 +332,6 @@ extract_vls_tld <-
         VLC = TX_PVLS_D / lag(TX_CURR, 2, order_by = period),
         VLS_timesVLC = (TX_PVLS / TX_PVLS_D) * VLC,
         VLS = (TX_PVLS / TX_PVLS_D),
-        #TLD_MOT = ifelse(other > 0, (TLD / (TLD + other)), NA),
         TLD_MOT = case_when(
          other > 0 ~ (TLD / (TLD + other)),
          TRUE ~ NA_real_),
@@ -345,7 +344,8 @@ extract_vls_tld <-
          TRUE ~ NA_real_
         )) %>%
       ungroup() %>%
-      filter(period == rep_pd)
+      filter(period == rep_pd) %>%
+      clean_agency()
 
     return(df_vls_tld)
   }
@@ -1107,15 +1107,18 @@ viz_vls_tld <-
                       limits = c(lmin, 1),
                       labels = percent) +
         facet_wrap(~fundingagency, nrow = 2) +
-        ggtitle("Viral Load Suppression") +
+        labs(title = "Viral Load Suppression") +
         si_style_map() +
         theme(
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
           legend.position =  "bottom",
+          legend.justification = "center",
           legend.key.width = ggplot2::unit(1, "cm"),
           legend.key.height = ggplot2::unit(.5, "cm"),
-          plot.title = element_text(size = 9,
-                                    family = "Source Sans Pro",
-                                    face = 1)
+          strip.text = element_text(hjust = .5),
+          plot.title = element_text(size = 12, hjust = .5, face = 1,
+                                    family = "Source Sans Pro")
         )
     }
 
@@ -1138,15 +1141,19 @@ viz_vls_tld <-
                       limits = c(lmin, 1),
                       labels = percent) +
         facet_wrap(~fundingagency, nrow = 2) +
-        ggtitle("% TLD Months of TX (MOT) \n out of total ARVs Dispensed") +
+        labs(title = "% TLD Months of TX (MOT) \n out of total ARVs Dispensed") +
         si_style_map() +
         theme(
+          axis.title.x = element_blank(),
+          axis.title.y = element_blank(),
           legend.position =  "bottom",
+          legend.justification = "center",
           legend.key.width = ggplot2::unit(1, "cm"),
           legend.key.height = ggplot2::unit(.5, "cm"),
-          plot.title = element_text(size = 9,
-                                    family = "Source Sans Pro",
-                                    face = 1))
+          strip.text = element_text(hjust = .5),
+          plot.title = element_text(size = 12, hjust = .5, face = 1,
+                                    color = glitr::color_title,
+                                    family = "Source Sans Pro"))
     }
 
     # Scatter plot
@@ -1158,39 +1165,40 @@ viz_vls_tld <-
                  size = 6,
                  alpha = 0.5,
                  show.legend = F) +
-      scale_x_continuous(limits = c(lmin, 1), labels = percent) +
-      #scale_y_continuous(limits = c(lmin, 1), labels = percent) +
+      scale_x_continuous(limits = c(0, 1), labels = percent) +
+      scale_y_continuous(limits = c(0, 1), labels = percent) +
       geom_abline(intercept = 0, slope = 1, linetype = "dashed", color = grey70k) +
+      coord_equal() +
       facet_wrap(~fundingagency, nrow = 2) +
-      labs(x = "% TLD MOT Dispensed", y = "VLS %") +
-      ggtitle("VLS vs. % TLD Months of TX \n (MOT) Dispensed") +
+      labs(x = "% TLD MOT Dispensed", y = "VLS Rates",
+           title = "VLS vs. % TLD Months of TX \n (MOT) Dispensed") +
       si_style_nolines() +
-      theme(plot.title = element_text(size = 9,
-                                      family = "Source Sans Pro",
-                                      face = 1))
+      theme(plot.title = element_text(size = 12, hjust = .5, face = 1,
+                                      color = glitr::color_title,
+                                      family = "Source Sans Pro"))
 
     # VIZ
     viz <- (map_vls + map_tld_mot + scatter) +
       plot_annotation(
-        #title = paste0(str_to_upper(country), " | ", rep_pd),
         caption = paste0(str_to_upper(country),
                          caption,
                          format(Sys.Date(), "%Y%m%d")),
-        theme = theme(plot.title = element_text(hjust = .5))
+        theme = theme(
+          plot.caption = element_text(color = glitr::color_caption, size = 9))
       )
 
     if (save == TRUE) {
 
       print(viz)
 
-      ggsave(here("Graphics",
+      ggsave(here(dir_graphics,
                   paste0(rep_pd,
-                         "_VLS_TLD_TLE_Ratio_",
+                         " - ",
                          str_to_upper(country),
-                         "_",
+                         "_VLS_TLD_TLE_Ratio_",
                          format(Sys.Date(), "%Y%m%d"),
                          ".png")),
-             plot = last_plot(), scale = 1.2, dpi = 310,
+             plot = viz, scale = 1.2, dpi = 310,
              width = 10, height = 7, units = "in")
     }
 

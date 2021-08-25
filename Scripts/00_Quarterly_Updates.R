@@ -76,4 +76,13 @@
   # spdf_pepfar <- spdf_pepfar %>%
   #   left_join(df_attrs, by = c("uid" = "id"))
 
-# Source files by Tech Area
+# Tech Areas ----
+
+  # TX VL
+  # VLC, VLnC and VLS
+  # VLS x TLD
+  #
+
+  # TX MMD
+  # TX ART
+  #

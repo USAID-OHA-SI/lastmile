@@ -4,7 +4,7 @@
 ##  PURPOSE: Geo-depiction of VL - % not covered
 ##  LICENCE: MIT
 ##  DATE:    2020-09-04
-##  UPDATED: 2021-06-30
+##  UPDATED: 2021-08-25
 
 # Libraries ---
 
@@ -458,54 +458,54 @@ get_output_name <-
 
 
 # Batch: TX_ML_PLP map
-df_tx_bad %>%
-  filter(!str_detect(operatingunit, " Region$"),
-         !is.na(TX_ML_PLP)) %>%
-  distinct(operatingunit) %>%
-  pull() %>%
-  nth(11) %>%
-  map(.x, .f = ~ tx_graph(
-    spdf = spdf_pepfar,
-    df_gph = df_tx_bad,
-    mapvar = TX_ML_PLP,
-    cntry = .x
-  ))
-
-
-df_tx_bad %>%
-  filter(!str_detect(operatingunit, " Region$"),
-         !is.na(TX_ML_PLP)) %>%
-  distinct(operatingunit) %>%
-  pull() %>%
-  map(.x, .f = ~ tx_batch(
-    spdf = spdf_pepfar,
-    df_gen = df_tx_bad,
-    mapvar = TX_ML_PLP,
-    cntry = .x,
-    rep_pd = rep_pd,
-    terr_raster = terr,
-    save = TRUE,
-    agency = TRUE,
-    facet_rows = 1,
-    gen_title = "",
-    four_parts = F)
-  )
-
-# re-apply psnu cleanup for SA
-tx_batch(
-    spdf = spdf_pepfar,
-    df_gen = df_tx_bad %>%
-      filter(operatingunit == "South Africa") %>%
-      clean_psnu(),
-    mapvar = TX_ML_PLP,
-    cntry = "South Africa",
-    rep_pd = rep_pd,
-    terr_raster = terr,
-    save = TRUE,
-    agency = TRUE,
-    facet_rows = 1,
-    gen_title = "",
-    four_parts = F)
+# df_tx_bad %>%
+#   filter(!str_detect(operatingunit, " Region$"),
+#          !is.na(TX_ML_PLP)) %>%
+#   distinct(operatingunit) %>%
+#   pull() %>%
+#   nth(11) %>%
+#   map(.x, .f = ~ tx_graph(
+#     spdf = spdf_pepfar,
+#     df_gph = df_tx_bad,
+#     mapvar = TX_ML_PLP,
+#     cntry = .x
+#   ))
+#
+#
+# df_tx_bad %>%
+#   filter(!str_detect(operatingunit, " Region$"),
+#          !is.na(TX_ML_PLP)) %>%
+#   distinct(operatingunit) %>%
+#   pull() %>%
+#   map(.x, .f = ~ tx_batch(
+#     spdf = spdf_pepfar,
+#     df_gen = df_tx_bad,
+#     mapvar = TX_ML_PLP,
+#     cntry = .x,
+#     rep_pd = rep_pd,
+#     terr_raster = terr,
+#     save = TRUE,
+#     agency = TRUE,
+#     facet_rows = 1,
+#     gen_title = "",
+#     four_parts = F)
+#   )
+#
+# # re-apply psnu cleanup for SA
+# tx_batch(
+#     spdf = spdf_pepfar,
+#     df_gen = df_tx_bad %>%
+#       filter(operatingunit == "South Africa") %>%
+#       clean_psnu(),
+#     mapvar = TX_ML_PLP,
+#     cntry = "South Africa",
+#     rep_pd = rep_pd,
+#     terr_raster = terr,
+#     save = TRUE,
+#     agency = TRUE,
+#     facet_rows = 1,
+#     gen_title = "",
+#     four_parts = F)
 
 
 
