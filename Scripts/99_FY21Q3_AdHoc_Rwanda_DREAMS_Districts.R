@@ -171,8 +171,7 @@
     geom_sf_text(data = gadm_adm1 %>% filter(name == 'KIGALI'),
                  aes(label = name),
                  color = grey40k,
-                 size = 8,
-                 nudge_y = .3) +
+                 size = 5) +
     geom_sf_text(data = gadm_adm1 %>% filter(name == 'EAST'),
                  aes(label = name),
                  color = grey40k,
