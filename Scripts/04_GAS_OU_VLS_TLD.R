@@ -3,7 +3,7 @@
 ##  PURPOSE: Geo-depiction of VL - % not covered
 ##  LICENCE: MIT
 ##  DATE:    2020-12-07
-##  UPDATED: 2021-08-25
+##  UPDATED: 2021-12-03
 
 
 # LIBRARIES --------------------------------
@@ -50,7 +50,7 @@
   rep_fy = 2021
   rep_fys = rep_fy %>% c(.-1, .)
 
-  rep_qtr = 2
+  rep_qtr = 4
 
   rep_pd = rep_fy %>%
     as.character() %>%

@@ -20,6 +20,7 @@
   library(patchwork)
   library(extrafont)
   library(glue)
+  library(googledrive)
 
   #source("./Scripts/00_Geo_Utilities.R")
 
@@ -412,12 +413,12 @@
   df_psnu <- file_psnu_im %>% read_msd()
 
   ## Raster data
-  terr <- gisr::get_raster(terr_path = dir_terr)
+  terr <- gisr::get_raster(path = dir_terr)
 
   ## PEPFAR Boundaries
   spdf_pepfar <- file_shp %>% sf::read_sf()
 
-  df_attrs <- gisr::get_ouuids() %>%
+  df_attrs <- glamr::get_ouuids() %>%
     filter(!str_detect(operatingunit, " Region$")) %>%
     pull(operatingunit) %>%
     map_dfr(.x, .f = ~get_attributes(country = .x))
@@ -483,7 +484,8 @@
 
   gdrive_dir <- msd_caption %>%
     gdrive_folder(name = .,
-                  path = gdrive_tx_ml)
+                  path = gdrive_tx_ml,
+                  add = TRUE)
 
   # dir_graphics %>%
   #   list.files(pattern = paste0("^", rep_pd, " - .*_TX_ML_InterruptionInTreatment_\\d{8}.png$"),

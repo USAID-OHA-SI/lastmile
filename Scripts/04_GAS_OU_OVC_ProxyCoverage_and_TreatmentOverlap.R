@@ -50,7 +50,7 @@
     age_groups <- c("<15", "<20")
 
     rep_fy = 2021
-    rep_qtr = 2 # Data available for Q2 & 4
+    rep_qtr = 4 # Data available for Q2 & 4
 
     rep_pd = rep_fy %>%
         as.character() %>%
@@ -263,7 +263,8 @@
                                   source = msd_version),
             filename = get_output_name(.x,
                                        age = "<20",
-                                       agency = "All Agencies"),
+                                       agency = "All Agencies",
+                                       rep_pd = rep_pd),
             save = T))
 
     # Batch 2: OVC Proxy Coverage <15, All Agencies
@@ -277,7 +278,7 @@
         filter(proxy_coverage > 0,
                !str_detect(operatingunit, " Region$")) %>%
         distinct(operatingunit) %>%
-        pull() %>%
+        pull() %>% first() %>%
         map(.x, .f = ~ viz_ovc_coverage(
             spdf = spdf_pepfar,
             df_ovc = df_ovc_cov,
@@ -291,7 +292,8 @@
                                   source = msd_version),
             filename = get_output_name(.x,
                                        age = "<15",
-                                       agency = "All Agencies"),
+                                       agency = "All Agencies",
+                                       rep_pd = rep_pd),
             save = T))
 
     # Batch 3: OVC Proxy Coverage <20, USAID Only
@@ -319,7 +321,8 @@
                                   source = msd_version),
             filename = get_output_name(.x,
                                        age = "<20",
-                                       agency = "USAID Only"),
+                                       agency = "USAID Only",
+                                       rep_pd = rep_pd),
             save = T))
 
     # Batch 4: OVC Proxy Coverage <15, USAID Only
@@ -347,7 +350,8 @@
                                   source = msd_version),
             filename = get_output_name(.x,
                                        age = "<15",
-                                       agency = "USAID Only"),
+                                       agency = "USAID Only",
+                                       rep_pd = rep_pd),
             save = T))
 
 

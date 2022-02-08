@@ -4,7 +4,7 @@
 ##  PURPOSE: Geo-depiction of VL - % not covered
 ##  LICENCE: MIT
 ##  DATE:    2020-09-04
-##  UPDATED: 2021-08-25
+##  UPDATED: 2022-01-10
 
 # Libraries ---
 
@@ -23,6 +23,7 @@
   library(gophr)
   library(extrafont)
   library(tidytext)
+  library(googledrive)
 
 # GLOBALS ----
 
@@ -42,20 +43,35 @@
   ## Reporting Filters
   rep_agency = c("USAID", "HHS/CDC")
 
-  rep_fy = 2021
-  rep_qtr = 3
-
-  rep_pd = rep_fy %>%
-    as.character() %>%
-    str_sub(3, 4) %>%
-    paste0("FY", ., "Q", rep_qtr)
-
   ## File path + name
   file_psnu_im <- return_latest(
     folderpath = dir_merdata,
     pattern = "^MER_.*_PSNU_IM_.*_\\d{8}_v\\d{1}_\\d{1}.zip$",
     recursive = TRUE
   )
+
+  rep_pd <- file_psnu_im %>% identify_pd()
+
+  rep_qtr <- rep_pd %>%
+    str_sub(-1) %>%
+    as.integer()
+
+  rep_fy <- rep_pd %>%
+    str_sub(3,4) %>%
+    paste0("20", .) %>%
+    as.integer()
+
+  # MSD File version
+  msd_version <- ifelse(str_detect(file_psnu_im, ".*_\\d{8}_v1_\\d"), "i", "c")
+
+  msd_caption <- paste0(rep_pd, msd_version)
+
+  dir_graphics <- dir_graphics %>%
+    paste0("/", rep_pd, msd_version)
+
+  if(!dir.exists(dir_graphics)) {
+    dir.create(dir_graphics)
+  }
 
   ## File path + name
   file_shp <- return_latest(
@@ -64,19 +80,10 @@
     recursive = TRUE
   )
 
-  # MSD File version
-  msd_version <- ifelse(str_detect(file_psnu_im, ".*_\\d{8}_v1_\\d"), "i", "c")
-
-  msd_caption <- paste0(rep_pd, msd_version)
-
-  dir_graphics %<>%
-    paste0("/", rep_pd, msd_version)
-
 # FUNCTIONS ---------------------------------------------------------
 
 ## Utility functions
 source("./Scripts/00_Utilities.R")
-#source("./Scripts/00_Geo_Utilities.R")
 source("./Scripts/00_VL_Utilities.R")
 source("./Scripts/00_ML_Utilities.R")
 
@@ -135,7 +142,7 @@ get_title <-
 #'
 get_caption <-
   function(country,
-           rep_pd = "FY21Q2c",
+           rep_pd = msd_caption,
            var = NULL) {
 
   caption <- paste0("OHA/SIEI - Data Source: ",
@@ -202,12 +209,12 @@ get_output_name <-
   ## Geodata
 
   ## Terrain Raster
-  terr <- get_raster(terr_path = dir_terr)
+  terr <- get_raster(path = dir_terr)
 
   ## GEO - PEPFAR Orgs boundaries
   spdf_pepfar <- file_shp %>% sf::read_sf()
 
-  df_attrs <- gisr::get_ouuids() %>%
+  df_attrs <- glamr::get_ouuids() %>%
     filter(!str_detect(operatingunit, " Region$")) %>%
     pull(operatingunit) %>%
     map_dfr(.x, .f = ~get_attributes(country = .x))
@@ -269,19 +276,17 @@ get_output_name <-
 
   ## Test Individual VL maps
 
-  cname <- "Nigeria"
-
-  map_viralload(
-    spdf = spdf_pepfar,
-    df = df_vl,
-    vl_variable = "VLS",
-    cntry = cname,
-    terr_raster = terr,
-    agency = T,
-    facet_rows = 2
-  )
-
-
+  # cname <- "Nigeria"
+  #
+  # map_viralload(
+  #   spdf = spdf_pepfar,
+  #   df = df_vl,
+  #   vl_variable = "VLS",
+  #   cntry = cname,
+  #   terr_raster = terr,
+  #   agency = T,
+  #   facet_rows = 2
+  # )
 
 # BATCH VIZ ---------------------------------------------------------------
 
@@ -296,7 +301,7 @@ get_output_name <-
     distinct(operatingunit) %>%
     pull()
 
-  map_ous %>% nth(5) %>%
+  map_ous %>%
     map(.x, .f = ~ map_viralloads(
         spdf = spdf_pepfar,
         df = df_vl,

@@ -18,12 +18,42 @@
 
 # FILES ----
 
+  ## File path + name
+  file_psnu_im <- return_latest(
+    folderpath = dir_merdata,
+    pattern = "^MER_.*_PSNU_IM_.*_\\d{8}_v\\d{1}_\\d{1}.zip$",
+    recursive = TRUE
+  )
+
+  # Reporting Periods
+  rep_pd <- file_psnu_im %>% identify_pd()
+
+  rep_qtr <- rep_pd %>%
+    str_sub(-1) %>%
+    as.integer()
+
+  rep_fy <- rep_pd %>%
+    str_sub(3,4) %>%
+    paste0("20", .) %>%
+    as.integer()
+
+  # MSD File version
+  msd_version <- ifelse(str_detect(file_psnu_im, ".*_\\d{8}_v1_\\d"), "i", "c")
+
+  msd_caption <- paste0(rep_pd, msd_version)
+
+  dir_graphics <- dir_graphics %>%
+    paste0("/", rep_pd, msd_version)
+
+  if(!dir.exists(dir_graphics)) {
+    dir.create(dir_graphics)
+  }
 
 # REPORTING PERIODS ----
 
   rep_fy <- 2021
 
-  rep_qtr <- 3
+  rep_qtr <- 4
 
   rep_fy2 <- rep_fy %>%
     as.character() %>%
@@ -55,6 +85,16 @@
   rep_pds <- c(rep_ref_pd, rep_pd)
   rep_pds2 <- c(rep_init_pd, rep_pd)
 
+# FUNCTIONS ----
+
+  clear_workspace <- function() {
+    # clear all objects includes hidden objects.
+    rm(list = ls(all.names = TRUE))
+
+    #free up memory and report the memory usage.
+    gc()
+  }
+
 # LOAD DATA ----
 
   # MSD
@@ -81,8 +121,20 @@
   # TX VL
   # VLC, VLnC and VLS
   # VLS x TLD
-  #
+  source("./Scripts/04_GAS_OU_ViralLoad_NotCovered.R")
+  clear_workspace()
 
   # TX MMD
+  source("./Scripts/99_GAS_OU_MMD_Distribution.R")
+  clear_workspace()
+
+  #source("./Scripts/99_GAS_OU_MMD_Regiments.R")
+  clear_workspace()
+
   # TX ART
-  #
+  source("./Scripts/04_GAS_TX_ML_SpatialDistribution.R")
+  clear_workspace()
+
+  # OVC & Proxy Coverage & Treatment Overlap
+  source("./Scripts/04_GAS_OU_OVC_Proxy_and_TreatmentOverlap.R")
+  clear_workspace()

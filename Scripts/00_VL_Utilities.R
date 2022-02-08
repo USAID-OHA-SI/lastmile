@@ -556,6 +556,7 @@ map_viralload <-
         plot.subtitle = element_text(family = "Source Sans Pro", size = 8),
         plot.caption = element_text(family = "Source Sans Pro", size = 6),
         legend.text = element_text(family = "Source Sans Pro", size = 6),
+        legend.title = element_blank(),
         legend.position =  "bottom",
         legend.direction = "horizontal",
         legend.key.width = ggplot2::unit(1.3, "cm"),
@@ -1112,6 +1113,7 @@ viz_vls_tld <-
         theme(
           axis.title.x = element_blank(),
           axis.title.y = element_blank(),
+          legend.title = element_blank(),
           legend.position =  "bottom",
           legend.justification = "center",
           legend.key.width = ggplot2::unit(1, "cm"),
@@ -1146,6 +1148,7 @@ viz_vls_tld <-
         theme(
           axis.title.x = element_blank(),
           axis.title.y = element_blank(),
+          legend.title = element_blank(),
           legend.position =  "bottom",
           legend.justification = "center",
           legend.key.width = ggplot2::unit(1, "cm"),
@@ -1194,7 +1197,7 @@ viz_vls_tld <-
       ggsave(here(dir_graphics,
                   paste0(rep_pd,
                          " - ",
-                         str_to_upper(country),
+                         str_replace(str_to_upper(country), "\\'", "-"),
                          "_VLS_TLD_TLE_Ratio_",
                          format(Sys.Date(), "%Y%m%d"),
                          ".png")),

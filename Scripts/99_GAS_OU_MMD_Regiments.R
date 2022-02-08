@@ -3,7 +3,7 @@
 ##  PURPOSE: MMD Distribution
 ##  LICENCE: MIT
 ##  DATE:    2021-03-02
-##  UPDATED: 2021-06-30
+##  UPDATED: 2022-01-10
 
 
 # DEPENDENCIES ------------------------------------------------------------
@@ -20,7 +20,7 @@
   library(tidytext)
   library(patchwork)
   library(glue)
-  library(ICPIutilities)
+  library(gophr)
   library(rnaturalearth)
 
   source("./Scripts/00_Geo_Utilities.R")
@@ -45,7 +45,7 @@
 
   rep_fy = 2021
 
-  rep_qtr = 2
+  rep_qtr = 4
 
   rep_fy2 = rep_fy %>%
     as.character() %>%
@@ -226,14 +226,14 @@
   df_site_locs <- glamr::get_ouorglevel(cntry, org_type = "facility") %>%
     gisr::extract_locations(country = cntry, level = .) %>%
     gisr::extract_facilities() %>%
-    select(id, ends_with("tude"))
+    dplyr::select(id, ends_with("tude"))
 
   # SPATIAL DATA
-  terr <- gisr::get_raster(terr_path = dwoir_terr)
+  terr <- gisr::get_raster(path = dir_terr)
 
   spdf_pepfar <- file_shp %>% sf::read_sf()
 
-  df_attrs <- gisr::get_ouuids() %>%
+  df_attrs <- glamr::get_ouuids() %>%
     filter(!str_detect(operatingunit, " Region$")) %>%
     pull(operatingunit) %>%
     map_dfr(.x, .f = ~get_attributes(country = .x))
@@ -253,8 +253,6 @@
 
   # SITE ARV Regiments
 
-  df_site %>% glimpse()
-
   df_site %>%
     filter(
       fiscal_year == rep_fy,
@@ -269,11 +267,11 @@
            standardizeddisaggregate == "DispensedARVBottles") %>%
     group_by(fiscal_year, fundingagency, primepartner, operatingunit,
              psnuuid, psnu, facilityuid, facility,
-             indicator, otherdisaggregate) %>% #head(100) %>% view
+             indicator, otherdisaggregate) %>%
     summarise(across(starts_with("qtr"), sum, na.rm = TRUE)) %>%
     ungroup() %>%
     reshape_msd() %>%
-    select(-period_type) %>%
+    dplyr::select(-period_type) %>%
     mutate(otherdisaggregate = str_remove(otherdisaggregate, "ARV Bottles - "),
            regiment_type = case_when(
              str_detect(otherdisaggregate, "LPV/r") ~ "LPV/r",

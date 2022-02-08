@@ -20,10 +20,9 @@
   library(tidytext)
   library(patchwork)
   library(glue)
-  library(ICPIutilities)
+  library(gophr)
   library(rnaturalearth)
 
-  #source("./Scripts/00_Geo_Utilities.R")
   source("./Scripts/00_VL_Utilities.R")
 
 # SETUP ----
@@ -47,7 +46,7 @@
   cntry <- "Nigeria"
 
   # Reporting periods
-  source("./Scripts/00_Quarterly_Updates.R")
+  #source("./Scripts/00_Quarterly_Updates.R")
 
   # MER Data - get the latest MSD PSNU x IM file
   file_psnu_im <- return_latest(
@@ -70,14 +69,47 @@
     recursive = TRUE
   )
 
+  # Reporting Periods
+  rep_pd <- file_psnu_im %>% identify_pd()
+
+  rep_qtr <- rep_pd %>%
+    str_sub(-1) %>%
+    as.integer()
+
+  rep_fy <- rep_pd %>%
+    str_sub(3,4) %>%
+    paste0("20", .) %>%
+    as.integer()
+
+  rep_fys <- c(rep_fy - 1, rep_fy)
+
+  rep_fys2 <- rep_fys %>%
+    as.character() %>%
+    str_sub(3,4) %>%
+    paste0("FY", .)
+
+  rep_ref_pd <- rep_fys %>%
+    first() %>%
+    str_sub(3,4) %>%
+    paste0("FY", ., "Q4")
+
+  rep_init_pd <- rep_fys %>%
+    first() %>%
+    str_sub(3,4) %>%
+    paste0("FY", ., "Q1")
+
+  rep_pds <- c(rep_ref_pd, rep_pd)
+  rep_pds2 <- c(rep_init_pd, rep_pd)
+
   # MSD File version
   msd_version <- ifelse(str_detect(file_psnu_im, ".*_\\d{8}_v1_\\d"), "i", "c")
+
   msd_caption <- paste0(rep_pd, msd_version)
 
-  dir_graphics %<>%
+  dir_graphics <- dir_graphics %>%
     paste0("/", rep_pd, msd_version)
 
-  gdrive_dir <- msd_version
+  gdrive_dir <- msd_caption
 
 
 
@@ -195,7 +227,10 @@
         # plot.subtitle = element_text(family = "Source Sans Pro", color = usaid_red),
         # plot.caption = element_text(family = "Source Sans Pro"),
         axis.title = element_blank(),
-        legend.position = "bottom"
+        legend.title = element_blank(),
+        legend.position = "bottom",
+        legend.key.width = ggplot2::unit(1.3, "cm"),
+        legend.key.height = ggplot2::unit(.4, "cm")
       )
   }
 
@@ -256,12 +291,12 @@
   # SPATIAL DATA
 
   ## Raster
-  terr <- gisr::get_raster(terr_path = dir_terr)
+  terr <- gisr::get_raster(path = dir_terr)
 
   ## PEPFAR Boundaries
   spdf_pepfar <- file_shp %>% sf::read_sf()
 
-  df_attrs <- gisr::get_ouuids() %>%
+  df_attrs <- get_ouuids() %>%
     filter(!str_detect(operatingunit, " Region$")) %>%
     pull(operatingunit) %>%
     map_dfr(.x, .f = ~get_attributes(country = .x))
@@ -370,72 +405,9 @@
     mutate(mmd = mmds) %>%
     ungroup()
 
-  # Test purrr::pmap
-
-  # df_cntries %>% pmap(paste)
-  #
-  # df_cntries %>%
-  #   filter(ou == "Zambia") %>%
-  #   pmap(~mmd_viz(.x, .y))
-  #
-  # df_cntries %>%
-  #   filter(ou == "Zambia") %>%
-  #   mutate(idx = row_number(),
-  #          tx_length = "6+") %>%
-  #   pmap(~mmd_viz(..1, ..4))
-
+  # Batch Vis
   df_cntries %>%
     pmap(~mmd_viz(.x, .y))
-
-  # Map of MMD
-  # TODO:
-  # Create a cross3 of OU/MMD Len and use pmap() or pwalk
-  # cntries %>%
-  #   map2("6+", function(cntry, mmd_len) {
-  #   #map2("3+", function(cntry, mmd_len) {
-  #   #map2("3-5", function(cntry, mmd_len) {
-  #   #map2("<3", function(cntry, mmd_len) {
-  #
-  #     len <- case_when(
-  #       str_detect(mmd_len, "[+]$") ~ str_replace(mmd_len, "[+]", "plus"),
-  #       str_detect(mmd_len, "^[<]") ~ str_replace(mmd_len, "[<]", "lt"),
-  #       TRUE ~ mmd_len
-  #     )
-  #
-  #     map <- mmd_map(df = df_mmd_share,
-  #                    spdf = spdf_pepfar,
-  #                    terr = terr,
-  #                    country = cntry,
-  #                    rep_pds = rep_pds,
-  #                    len = mmd_len,
-  #                    pal = "genoas")
-  #
-  #     if (!is.null(map)) {
-  #
-  #       map <- map +
-  #         plot_annotation(
-  #           title = glue("{str_to_upper(cntry)} - {rep_pd} MMD DISTRIBUTION"),
-  #           subtitle = glue("% MMD{mmd_len} from {rep_ref_pd} to {rep_pd}"),
-  #           theme = theme(plot.title = element_text(hjust = 0),
-  #                         plot.subtitle = element_text(hjust = 0))
-  #         )
-  #
-  #       cleaned_country <- cntry %>%
-  #         str_remove("'") %>%
-  #         str_to_upper()
-  #
-  #       si_save(
-  #         filename = file.path(
-  #           dir_graphics,
-  #           glue("{rep_pd}_{str_to_upper(cleaned_country)}_MMD{len} Distribution_{format(Sys.Date(), '%Y%m%d')}.png")),
-  #         plot = map,
-  #         width = 9.54,
-  #         height = 5,
-  #         scale = 1.4)
-  #     }
-  #
-  #     return(mmd_len)
-  #   })
 
 
 # UPLOAD TO GDRIVE ----

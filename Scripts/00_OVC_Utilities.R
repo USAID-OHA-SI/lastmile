@@ -296,7 +296,7 @@ map_ovc_coverage <-
       filter(proxy_coverage > 0)
 
     # Get basemap
-    basemap <- terrain_map(countries = lookup_country(country),
+    basemap <- terrain_map(countries = spdf_adm0,
                            adm0 = spdf_adm0,
                            adm1 = spdf_adm1,
                            mask = TRUE,
@@ -328,9 +328,12 @@ map_ovc_coverage <-
         fill = NA,
         size = .75
       ) +
+      #labs(x = "", y = "") +
       si_style_map() +
       theme(
+        legend.title = element_blank(),
         legend.position = "bottom",
+        legend.direction = "horizonal",
         legend.key.width = ggplot2::unit(1.5, "cm"),
         legend.key.height = ggplot2::unit(.5, "cm")
       )
