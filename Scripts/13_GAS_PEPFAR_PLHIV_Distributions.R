@@ -68,11 +68,18 @@
                        returnclass = "sf") %>%
     dplyr::select(sovereignt, admin, name, adm0_a3) %>%
     filter(admin != "Antarctica") %>% # Remove Antarctica
-    glamr::clean_countries(colname = "admin")
-
+    glamr::clean_countries(colname = "admin") %>%
+    mutate(admin = case_when(
+      admin == "Papua New Guinea" ~ "PNG",
+      TRUE ~ admin
+    ))
 
   spdf <- spdf %>%
     st_transform(crs = st_crs("+proj=robin"))
+
+  spdf %>%
+    st_drop_geometry() %>%
+    glimpse()
 
   ## NAT SUBNAT
 
@@ -81,24 +88,25 @@
   # Distinct Countries
   df_cntries <- df_nat %>%
     distinct(operatingunit, country) %>%
-    arrange(operatingunit, country) %>%
-    clean_countries(colname = "country")
+    arrange(operatingunit, country)
 
   df_asia <- df_cntries %>%
-    filter(operatingunit %in% ous)
+    filter(operatingunit %in% ous) %>%
+    clean_countries(colname = "country") %>%
+    arrange(country)
 
   # PLHIV
-  df_plhiv <- df_nat %>%
-    filter(fiscal_year %in% c(curr_fy, curr_fy +1),
-           operatingunit %in% ous,
-           indicator == "PLHIV",
-           standardizeddisaggregate == "Total Numerator") %>%
-    group_by(fiscal_year, operatingunit, country) %>%
-    summarise(across(targets, sum, na.rm = T), .groups = "drop") %>%
-    mutate(countryname = country) %>%
-    clean_countries(colname = "countryname") %>%
-    pivot_wider(names_from = fiscal_year,
-                values_from = targets)
+  # df_plhiv <- df_nat %>%
+  #   filter(fiscal_year %in% c(curr_fy, curr_fy +1),
+  #          operatingunit %in% ous,
+  #          indicator == "PLHIV",
+  #          standardizeddisaggregate == "Total Numerator") %>%
+  #   group_by(fiscal_year, operatingunit, country) %>%
+  #   summarise(across(targets, sum, na.rm = T), .groups = "drop") %>%
+  #   mutate(countryname = country) %>%
+  #   clean_countries(colname = "countryname") %>%
+  #   pivot_wider(names_from = fiscal_year,
+  #               values_from = targets)
 
 
   ## UNAIDS
@@ -112,10 +120,16 @@
            indicator == "Number PLHIV",
            age == "All",
            sex == "All",
-           !is.na(estimate))
+           !is.na(estimate)) %>%
+    select(year, country, indicator, age, sex, estimate)
 
   df_hiv_asia <- df_hiv_est %>%
+    clean_countries(colname = "country") %>%
     filter(country %in% df_asia$country)
+
+  ## Manually add India and PNG data
+  df_hiv_asia <- df_hiv_asia %>%
+    add_row(country = "India", estimate = 2400000)
 
   # Join MSD to spdf
   spdf_asia <- spdf %>%
@@ -131,8 +145,6 @@
   spdf_asia <- spdf_asia %>%
     bind_cols(locs)
 
-
-
 ## VIZ ----
 
   ## Global Map - Showing Asia Countries
@@ -140,10 +152,8 @@
     geom_sf(data = spdf, fill = NA, color = grey50k, size = .4) +
     geom_sf(data = spdf_asia,
             aes(fill = estimate),
-            #fill = usaid_red,
             color = grey30k,
-            size = .2,
-            ) +
+            size = .2) +
     geom_shadowtext(data = spdf_asia,
                     aes(X, Y,
                         label = paste0(str_replace(admin, " ", "\n")
@@ -183,11 +193,11 @@
           TRUE ~ usaid_darkgrey
         ),
         txt_pos = case_when(
-          estimate > 50000 ~ 1.2,
+          estimate > 200000 ~ 1.2,
           TRUE ~ -0.1
         )) %>%
       ggplot(aes(reorder(country, estimate), estimate, fill = estimate)) +
-        geom_col(width = .70) +
+        geom_col(width = .60) +
         geom_text(aes(y = 0, label = country), hjust = 0, vjust = -2.5,
                   size = 4, color = usaid_black, fontface = "bold") +
         geom_text(aes(label = comma(estimate), color = txt_color, hjust = txt_pos),
@@ -208,5 +218,5 @@
   ggsave(here(dir_graphics, paste0(curr_pd, "_ASIA_PEPFAR_ASIA_Countries - BARS - ", curr_date(), ".png")),
          plot = viz_bar,
          scale = 1.2, dpi = 310,
-         width = 8, height = 7, units = "in")
+         width = 10, height = 8, units = "in")
 
